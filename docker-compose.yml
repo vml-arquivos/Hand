@@ -1,0 +1,34 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: rifas
+      POSTGRES_USER: rifas
+      POSTGRES_PASSWORD: rifas_senha_forte
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rifas -d rifas"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://rifas:rifas_senha_forte@postgres:5432/rifas
+      ADMIN_PASSWORD: troque-esta-senha
+      JWT_SECRET: troque-este-jwt-secret
+      VITE_APP_TITLE: Sistema de Rifas Beneficentes
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres_data:
