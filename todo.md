@@ -14,3 +14,12 @@
 - [x] Validar build/testes/status do projeto, salvar checkpoint e fazer commit no GitHub.
 - [x] Entregar resumo técnico, modelagem e instruções finais ao usuário.
 
+
+- [x] Revisar arquivos Docker e documentação para deploy em Coolify com app e PostgreSQL 17 em containers separados.
+- [x] Preparar lista clara de variáveis de ambiente necessárias para o Coolify.
+- [x] Criar passo a passo simples e não técnico para instalar pela interface do Coolify a partir do repositório público.
+- [x] Validar, salvar checkpoint e atualizar o GitHub com as instruções finais de deploy.
+
+- [ ] Salvar um novo checkpoint após as mudanças finais de deploy para Coolify.
+- [ ] Enviar ao GitHub as alterações finais de deploy e documentação.
+- [x] Registrar no guia final que o build Docker não foi executado no sandbox porque Docker não está instalado, embora TypeScript, testes e build da aplicação tenham passado.

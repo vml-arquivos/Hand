@@ -1,18 +1,18 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:17-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: rifas
-      POSTGRES_USER: rifas
-      POSTGRES_PASSWORD: rifas_senha_forte
+      POSTGRES_DB: ${POSTGRES_DB:-rifas}
+      POSTGRES_USER: ${POSTGRES_USER:-rifas}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-troque_esta_senha_do_banco}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U rifas -d rifas"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-rifas} -d $${POSTGRES_DB:-rifas}"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
 
   app:
     build: .
@@ -23,10 +23,12 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
-      DATABASE_URL: postgresql://rifas:rifas_senha_forte@postgres:5432/rifas
-      ADMIN_PASSWORD: troque-esta-senha
-      JWT_SECRET: troque-este-jwt-secret
-      VITE_APP_TITLE: Sistema de Rifas Beneficentes
+      DATABASE_URL: postgresql://${POSTGRES_USER:-rifas}:${POSTGRES_PASSWORD:-troque_esta_senha_do_banco}@postgres:5432/${POSTGRES_DB:-rifas}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-troque_esta_senha_do_admin}
+      JWT_SECRET: ${JWT_SECRET:-troque_este_segredo_jwt_com_mais_de_32_caracteres}
+      VITE_APP_TITLE: ${VITE_APP_TITLE:-Sistema de Rifas Beneficentes}
+      DB_MIGRATION_ATTEMPTS: 30
+      DB_MIGRATION_DELAY_MS: 2000
     ports:
       - "3000:3000"
 
