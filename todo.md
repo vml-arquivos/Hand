@@ -21,5 +21,5 @@
 - [x] Validar, salvar checkpoint e atualizar o GitHub com as instruções finais de deploy.
 
 - [x] Salvar um novo checkpoint após as mudanças finais de deploy para Coolify.
-- [ ] Enviar ao GitHub as alterações finais de deploy e documentação.
+- [x] Enviar ao GitHub as alterações finais de deploy e documentação.
 - [x] Registrar no guia final que o build Docker não foi executado no sandbox porque Docker não está instalado, embora TypeScript, testes e build da aplicação tenham passado.
