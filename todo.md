@@ -26,3 +26,6 @@
 
 - [x] Corrigir Dockerfile para copiar a pasta `patches` antes do `pnpm install`, resolvendo erro ENOENT no Coolify.
 - [x] Validar a correção de build e enviar novo commit ao GitHub.
+
+- [x] Corrigir erro de migração no Coolify: `syntax error at or near "NOT"` em `scripts/apply-migrations.mjs` com PostgreSQL 17.
+- [ ] Validar a correção de migração e enviar novo checkpoint/commit ao GitHub.

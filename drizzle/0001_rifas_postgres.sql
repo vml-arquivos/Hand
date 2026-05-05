@@ -1,5 +1,16 @@
-CREATE TYPE IF NOT EXISTS "user_role" AS ENUM ('user', 'admin');
-CREATE TYPE IF NOT EXISTS "order_status" AS ENUM ('pendente', 'confirmado', 'cancelado');
+DO $$
+BEGIN
+  CREATE TYPE "user_role" AS ENUM ('user', 'admin');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+  CREATE TYPE "order_status" AS ENUM ('pendente', 'confirmado', 'cancelado');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
 
 CREATE TABLE IF NOT EXISTS "users" (
   "id" serial PRIMARY KEY,
