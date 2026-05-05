@@ -28,4 +28,6 @@
 - [x] Validar a correção de build e enviar novo commit ao GitHub.
 
 - [x] Corrigir erro de migração no Coolify: `syntax error at or near "NOT"` em `scripts/apply-migrations.mjs` com PostgreSQL 17.
-- [ ] Validar a correção de migração e enviar novo checkpoint/commit ao GitHub.
+- [x] Validar a correção de migração e enviar novo checkpoint/commit ao GitHub.
+- [ ] Salvar um novo checkpoint após a correção da migração PostgreSQL no Coolify.
+- [ ] Confirmar que a branch `main` no GitHub contém também o estado final do checklist atualizado.
