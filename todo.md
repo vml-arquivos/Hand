@@ -25,4 +25,4 @@
 - [x] Registrar no guia final que o build Docker não foi executado no sandbox porque Docker não está instalado, embora TypeScript, testes e build da aplicação tenham passado.
 
 - [x] Corrigir Dockerfile para copiar a pasta `patches` antes do `pnpm install`, resolvendo erro ENOENT no Coolify.
-- [ ] Validar a correção de build e enviar novo commit ao GitHub.
+- [x] Validar a correção de build e enviar novo commit ao GitHub.
