@@ -25,7 +25,10 @@ export default function AdminDashboard() {
   const [config, setConfig] = useState<any>(null);
 
   useEffect(() => {
-    if (dashboard.data?.rifa) setConfig(dashboard.data.rifa);
+    if (dashboard.data?.rifa) {
+      const rifa = dashboard.data.rifa;
+      setConfig({ ...rifa, precoBilhete: Number(rifa.precoBilhete).toFixed(2) });
+    }
   }, [dashboard.data?.rifa]);
 
   async function onUpload(file: File) {
