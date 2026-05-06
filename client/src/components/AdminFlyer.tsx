@@ -7,6 +7,8 @@ type FlyerRifa = {
   nome: string;
   descricao: string;
   imagemUrl?: string | null;
+  premio?: string | null;
+  dataSorteio?: string | null;
   pixChave: string;
   vendidos: number;
   totalBilhetes: number;
@@ -65,6 +67,8 @@ export function AdminFlyer({ rifa }: { rifa: FlyerRifa }) {
         <p className="text-xs uppercase tracking-[0.3em] text-[#f2cf8d]">Rifa Beneficente</p>
         <h3 className="mt-2 text-3xl font-semibold leading-tight">{rifa.nome}</h3>
         <p className="mt-3 max-w-xl text-sm leading-6 text-white/85">{rifa.descricao}</p>
+        <p className="mt-2 text-sm"><strong>Prêmio:</strong> {rifa.premio || "Prêmio da campanha"}</p>
+        <p className="mt-1 text-sm"><strong>Data do sorteio:</strong> {rifa.dataSorteio || "A definir"}</p>
 
         {rifa.imagemUrl ? (
           <img src={rifa.imagemUrl} alt={rifa.nome} className="mt-5 h-56 w-full rounded-2xl object-cover shadow-2xl" />

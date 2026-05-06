@@ -21,6 +21,8 @@ export const rifas = pgTable("rifas", {
   slug: varchar("slug", { length: 120 }).notNull().unique(),
   nome: varchar("nome", { length: 180 }).notNull(),
   descricao: text("descricao").notNull(),
+  premio: varchar("premio", { length: 255 }),
+  dataSorteio: varchar("dataSorteio", { length: 120 }),
   imagemUrl: text("imagemUrl"),
   totalBilhetes: integer("totalBilhetes").notNull(),
   precoBilhete: decimal("precoBilhete", { precision: 10, scale: 2 }).notNull(),
