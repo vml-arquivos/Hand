@@ -118,8 +118,23 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         assertAdmin(input.adminSecret);
         const { adminSecret: _, ...rifa } = input;
+
+        // FIX: Sanitiza o preço removendo símbolo de moeda e convertendo vírgula para ponto.
+        // Suporta formatos vindos do frontend: "R$ 20,00" / "R$20,00" / "20,00" / "20.00"
+        const precoBilheteSanitizado = rifa.precoBilhete
+          .replace(/R\$\s*/gi, "")   // Remove "R$" e espaço opcional
+          .replace(/\./g, "")        // Remove separador de milhar (ex: "1.000,00" → "1000,00")
+          .replace(",", ".")         // Converte vírgula decimal para ponto
+          .trim();
+
+        const precoNumerico = parseFloat(precoBilheteSanitizado);
+        if (isNaN(precoNumerico) || precoNumerico < 0) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Preço do bilhete inválido. Use o formato: 20.00" });
+        }
+
         return db.updateRifa({
           ...rifa,
+          precoBilhete: precoNumerico.toFixed(2),
           premio: rifa.premio || null,
           dataSorteio: rifa.dataSorteio || null,
           imagemUrl: rifa.imagemUrl || null,
