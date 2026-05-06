@@ -43,9 +43,29 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    const url = new URL(window.location.href);
+    const qtd = Number(url.searchParams.get("qtd") || "1");
+    if (Number.isFinite(qtd) && qtd > 0) setQuantidade(Math.floor(qtd));
+
+    const saved = localStorage.getItem(DONOR_STORAGE_KEY);
+    if (!saved) return;
+    try {
+      const donor = JSON.parse(saved) as { nome?: string; telefone?: string };
+      setForm((prev) => ({ ...prev, nome: donor.nome ?? "", telefone: donor.telefone ?? "" }));
+    } catch {
+      localStorage.removeItem(DONOR_STORAGE_KEY);
+    }
+  }, []);
+
+  useEffect(() => {
     if (!rifa?.pixCopiaCola) return;
     QRCode.toDataURL(rifa.pixCopiaCola, { margin: 1, width: 220 }).then(setQr);
   }, [rifa?.pixCopiaCola]);
+
+  useEffect(() => {
+    if (!rifa) return;
+    setQuantidade((prev) => Math.max(1, Math.min(prev, Math.min(100, rifa.disponiveis || 1))));
+  }, [rifa]);
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
