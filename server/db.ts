@@ -76,6 +76,8 @@ export async function getPublicRifa(slug = "rifa-beneficente") {
   const [pending] = await db.select({ total: sum(pedidos.quantidade) }).from(pedidos).where(and(eq(pedidos.rifaId, rifa.id), eq(pedidos.status, "pendente")));
   return {
     ...rifa,
+    // Garante que precoBilhete sempre é uma string formatada com 2 casas decimais
+    precoBilhete: String(rifa.precoBilhete),
     vendidos: Number(confirmed?.total ?? 0),
     pendentes: Number(pending?.total ?? 0),
     disponiveis: Math.max(0, rifa.totalBilhetes - Number(confirmed?.total ?? 0)),
@@ -88,7 +90,9 @@ export async function createPedido(input: { rifaId: number; quantidade: number; 
   if (!rifa || !rifa.ativa) throw new Error("Rifa indisponível.");
   const [usados] = await db.select({ total: count() }).from(bilhetes).where(eq(bilhetes.rifaId, rifa.id));
   if (Number(usados?.total ?? 0) + input.quantidade > rifa.totalBilhetes) throw new Error("Não há bilhetes suficientes disponíveis.");
-  const valorTotal = (Number(rifa.precoBilhete) * input.quantidade).toFixed(2);
+  // Converte precoBilhete para número de forma segura
+  const precoBilheteNumerico = parseFloat(String(rifa.precoBilhete));
+  const valorTotal = (precoBilheteNumerico * input.quantidade).toFixed(2);
   const [comprador] = await db.insert(compradores).values({
     nome: input.nome.trim(),
     telefone: input.telefone.trim(),
@@ -118,7 +122,19 @@ export async function getPedidoDetalhado(codigo: string) {
   const row = rows[0];
   if (!row) return null;
   const numeros = await db.select().from(bilhetes).where(eq(bilhetes.pedidoId, row.pedido.id)).orderBy(asc(bilhetes.numero));
-  return { ...row, bilhetes: numeros };
+  return {
+    ...row,
+    // Garante que valores monetários são sempre strings formatadas
+    pedido: {
+      ...row.pedido,
+      valorTotal: String(row.pedido.valorTotal),
+    },
+    rifa: {
+      ...row.rifa,
+      precoBilhete: String(row.rifa.precoBilhete),
+    },
+    bilhetes: numeros,
+  };
 }
 
 export async function listPedidos() {
@@ -130,7 +146,19 @@ export async function listPedidos() {
     .orderBy(desc(pedidos.createdAt));
   const pedidoIds = rows.map(r => r.pedido.id);
   const tickets = pedidoIds.length ? await db.select().from(bilhetes).where(inArray(bilhetes.pedidoId, pedidoIds)).orderBy(asc(bilhetes.numero)) : [];
-  return rows.map(row => ({ ...row, bilhetes: tickets.filter(t => t.pedidoId === row.pedido.id) }));
+  return rows.map(row => ({
+    ...row,
+    // Garante que valores monetários são sempre strings formatadas
+    pedido: {
+      ...row.pedido,
+      valorTotal: String(row.pedido.valorTotal),
+    },
+    rifa: {
+      ...row.rifa,
+      precoBilhete: String(row.rifa.precoBilhete),
+    },
+    bilhetes: tickets.filter(t => t.pedidoId === row.pedido.id),
+  }));
 }
 
 export async function getAdminStats() {
@@ -177,5 +205,9 @@ export async function updateRifa(input: InsertRifa & { id: number }) {
   const db = requireDbSync(await getDb());
   const { id, ...data } = input;
   const [updated] = await db.update(rifas).set({ ...data, updatedAt: new Date() }).where(eq(rifas.id, id)).returning();
-  return updated;
+  // Garante que precoBilhete é sempre uma string formatada
+  return {
+    ...updated,
+    precoBilhete: String(updated.precoBilhete),
+  };
 }

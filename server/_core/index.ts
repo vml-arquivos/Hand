@@ -8,6 +8,11 @@ import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
+import { resolve, dirname } from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const UPLOADS_DIR = resolve(__dirname, "..", "..", "uploads");
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -36,6 +41,8 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   registerStorageProxy(app);
   registerOAuthRoutes(app);
+  // Serve uploaded files from /uploads directory
+  app.use("/uploads", express.static(UPLOADS_DIR, { maxAge: "1d" }));
   // tRPC API
   app.use(
     "/api/trpc",
@@ -44,6 +51,7 @@ async function startServer() {
       createContext,
     })
   );
+  // Fallback routes for SPA (must come after /uploads and other static routes)
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);
