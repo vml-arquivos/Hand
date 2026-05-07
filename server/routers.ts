@@ -8,6 +8,22 @@ import { storagePut } from "./storage";
 
 const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || "troque_este_segredo_jwt_com_mais_de_32_caracteres");
 
+/**
+ * Sanitiza e converte o valor do preço do bilhete para número.
+ * Aceita formatos: "10,00", "10.00", "R$ 10,00", "R$10.50", "10" etc.
+ * Retorna NaN se o valor for inválido.
+ */
+function sanitizarPreco(valor: string | number): number {
+  if (typeof valor === "number") return isNaN(valor) ? NaN : valor;
+  const limpo = String(valor)
+    .trim()
+    .replace(/R\$\s*/gi, "")   // Remove "R$" com ou sem espaço
+    .replace(/\s+/g, "")       // Remove espaços restantes
+    .replace(/\./g, "")        // Remove pontos de milhar (ex: 1.000,00 → 100000)
+    .replace(",", ".");        // Converte vírgula decimal para ponto
+  return parseFloat(limpo);
+}
+
 export const appRouter = router({
   // --- AUTHENTICATION ---
   auth: router({
@@ -115,28 +131,29 @@ export const appRouter = router({
           dataSorteio: z.string().optional().or(z.literal("")),
           imagemUrl: z.string().optional().or(z.literal("")),
           totalBilhetes: z.number().int().min(1),
-          precoBilhete: z.string().min(1),
+          // Aceita string ou número — o frontend pode enviar "10.00" ou 10.00
+          precoBilhete: z.union([z.string().min(1), z.number()]),
           pixChave: z.string().min(3),
           pixCopiaCola: z.string().min(10),
           ativa: z.boolean(),
         }),
       )
       .mutation(async ({ input, ctx }) => {
-        let precoBilheteSanitizado = String(input.precoBilhete)
-          .trim()
-          .replace(/R\$\s*/gi, "")
-          .replace(/\./g, "")
-          .replace(",", ".")
-          .trim();
-
-        const precoNumerico = parseFloat(precoBilheteSanitizado);
-        if (isNaN(precoNumerico) || precoNumerico < 0) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Preço inválido." });
+        // Sanitiza e valida o preço
+        const precoNumerico = sanitizarPreco(input.precoBilhete);
+        if (isNaN(precoNumerico) || precoNumerico < 0.01) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Preço inválido: "${input.precoBilhete}". Use o formato 10,00 ou 10.00`,
+          });
         }
+
+        // Garante que o preço seja salvo como string com 2 casas decimais
+        const precoFormatado = precoNumerico.toFixed(2);
 
         const data = {
           ...input,
-          precoBilhete: precoNumerico.toFixed(2),
+          precoBilhete: precoFormatado,
           premio: input.premio || null,
           dataSorteio: input.dataSorteio || null,
           imagemUrl: input.imagemUrl || null,
@@ -145,10 +162,22 @@ export const appRouter = router({
         let result;
         if (input.id) {
           result = await db.updateRifa({ ...data, id: input.id });
-          await db.createAuditLog({ adminUserId: ctx.admin.id, action: "update_rifa", entityType: "rifa", entityId: result.id, details: { nome: result.nome } });
+          await db.createAuditLog({
+            adminUserId: ctx.admin.id,
+            action: "update_rifa",
+            entityType: "rifa",
+            entityId: result.id,
+            details: { nome: result.nome, precoBilhete: precoFormatado },
+          });
         } else {
           result = await db.createRifa(data);
-          await db.createAuditLog({ adminUserId: ctx.admin.id, action: "create_rifa", entityType: "rifa", entityId: result.id, details: { nome: result.nome } });
+          await db.createAuditLog({
+            adminUserId: ctx.admin.id,
+            action: "create_rifa",
+            entityType: "rifa",
+            entityId: result.id,
+            details: { nome: result.nome, precoBilhete: precoFormatado },
+          });
         }
         return result;
       }),
@@ -169,12 +198,12 @@ export const appRouter = router({
       }))
       .mutation(async ({ input, ctx }) => {
         const result = await db.upsertPremio(input);
-        await db.createAuditLog({ 
-          adminUserId: ctx.admin.id, 
-          action: input.id ? "update_premio" : "create_premio", 
-          entityType: "premio", 
-          entityId: result.id, 
-          details: { titulo: result.titulo, rifaId: result.rifaId } 
+        await db.createAuditLog({
+          adminUserId: ctx.admin.id,
+          action: input.id ? "update_premio" : "create_premio",
+          entityType: "premio",
+          entityId: result.id,
+          details: { titulo: result.titulo, rifaId: result.rifaId },
         });
         return result;
       }),
@@ -212,17 +241,20 @@ export const appRouter = router({
           throw new TRPCError({ code: "BAD_REQUEST", message: "Imagem muito grande (máx 8MB)." });
         }
 
-        const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, "-");
+        // Sanitiza o nome do arquivo: mantém apenas caracteres seguros
+        const safeName = input.fileName
+          .replace(/[^a-zA-Z0-9._-]/g, "-")
+          .replace(/-+/g, "-")
+          .toLowerCase();
+
         const folder = input.assetType === "comprovante" ? "comprovantes" : "rifas";
         const result = await storagePut(`${folder}/${Date.now()}-${safeName}`, buffer, input.contentType);
-        
-        // Opcional: Salvar metadados em rifa_assets se necessário para auditoria futura
-        
-        await db.createAuditLog({ 
-          adminUserId: ctx.admin.id, 
-          action: "upload_image", 
-          entityType: input.assetType, 
-          details: { url: result.url, type: input.assetType } 
+
+        await db.createAuditLog({
+          adminUserId: ctx.admin.id,
+          action: "upload_image",
+          entityType: input.assetType,
+          details: { url: result.url, type: input.assetType },
         });
 
         return { url: result.url };

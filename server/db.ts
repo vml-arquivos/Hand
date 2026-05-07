@@ -5,7 +5,7 @@ import bcrypt from "bcryptjs";
 import { 
   bilhetes, compradores, InsertRifa, InsertUser, pedidos, rifas, users, 
   adminUsers, auditLogs, premios, rifaAssets,
-  type OrderStatus, type AdminUser, type InsertAdminUser 
+  type OrderStatus, type AdminUser, type InsertAdminUser, type InsertPremio
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -153,7 +153,8 @@ export async function getPublicRifa(slug = "rifa-beneficente") {
 
   return {
     ...rifa,
-    precoBilhete: String(rifa.precoBilhete),
+    // Garante que precoBilhete seja sempre uma string numérica válida
+    precoBilhete: parseFloat(String(rifa.precoBilhete)).toFixed(2),
     vendidos: Number(confirmed?.total ?? 0),
     pendentes: Number(pending?.total ?? 0),
     disponiveis: Math.max(0, rifa.totalBilhetes - Number(confirmed?.total ?? 0)),
@@ -163,7 +164,12 @@ export async function getPublicRifa(slug = "rifa-beneficente") {
 
 export async function listAllRifas() {
   const db = requireDbSync(await getDb());
-  return db.select().from(rifas).orderBy(desc(rifas.createdAt));
+  const rows = await db.select().from(rifas).orderBy(desc(rifas.createdAt));
+  // Normaliza precoBilhete para sempre ser string numérica com 2 casas
+  return rows.map(r => ({
+    ...r,
+    precoBilhete: parseFloat(String(r.precoBilhete)).toFixed(2),
+  }));
 }
 
 export async function createPedido(input: { 
@@ -220,11 +226,11 @@ export async function getPedidoDetalhado(codigo: string) {
     ...row,
     pedido: {
       ...row.pedido,
-      valorTotal: String(row.pedido.valorTotal),
+      valorTotal: parseFloat(String(row.pedido.valorTotal)).toFixed(2),
     },
     rifa: {
       ...row.rifa,
-      precoBilhete: String(row.rifa.precoBilhete),
+      precoBilhete: parseFloat(String(row.rifa.precoBilhete)).toFixed(2),
     },
     bilhetes: numeros,
   };
@@ -243,11 +249,11 @@ export async function listPedidos() {
     ...row,
     pedido: {
       ...row.pedido,
-      valorTotal: String(row.pedido.valorTotal),
+      valorTotal: parseFloat(String(row.pedido.valorTotal)).toFixed(2),
     },
     rifa: {
       ...row.rifa,
-      precoBilhete: String(row.rifa.precoBilhete),
+      precoBilhete: parseFloat(String(row.rifa.precoBilhete)).toFixed(2),
     },
     bilhetes: tickets.filter(t => t.pedidoId === row.pedido.id),
   }));
@@ -317,14 +323,14 @@ export async function cancelarPedido(pedidoId: number, adminUserId?: number) {
 export async function createRifa(input: InsertRifa) {
   const db = requireDbSync(await getDb());
   const [created] = await db.insert(rifas).values({ ...input, updatedAt: new Date() }).returning();
-  return { ...created, precoBilhete: String(created.precoBilhete) };
+  return { ...created, precoBilhete: parseFloat(String(created.precoBilhete)).toFixed(2) };
 }
 
 export async function updateRifa(input: InsertRifa & { id: number }) {
   const db = requireDbSync(await getDb());
   const { id, ...data } = input;
   const [updated] = await db.update(rifas).set({ ...data, updatedAt: new Date() }).where(eq(rifas.id, id)).returning();
-  return { ...updated, precoBilhete: String(updated.precoBilhete) };
+  return { ...updated, precoBilhete: parseFloat(String(updated.precoBilhete)).toFixed(2) };
 }
 
 // --- PREMIOS ---
