@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
 import net from "net";
+import cookieParser from "cookie-parser";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { registerStorageProxy } from "./storageProxy";
@@ -10,6 +11,7 @@ import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
+import { bootstrapAdmin } from "../db";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const UPLOADS_DIR = resolve(__dirname, "..", "..", "uploads");
@@ -34,8 +36,13 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 }
 
 async function startServer() {
+  // Bootstrap Admin User
+  await bootstrapAdmin().catch(err => console.error("[bootstrap] Erro ao criar admin inicial:", err));
+
   const app = express();
   const server = createServer(app);
+  
+  app.use(cookieParser());
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
