@@ -1,32 +1,65 @@
-import { COOKIE_NAME } from "@shared/const";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { getSessionCookieOptions } from "./_core/cookies";
-import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, router } from "./_core/trpc";
+import bcrypt from "bcryptjs";
+import { SignJWT } from "jose";
+import { adminProcedure, publicProcedure, router } from "./_core/trpc";
 import * as db from "./db";
 import { storagePut } from "./storage";
 
-const adminSecret = z.object({ adminSecret: z.string().min(1) });
-
-function assertAdmin(secret: string) {
-  const expected = process.env.ADMIN_PASSWORD || process.env.ADMIN_SECRET || "admin123";
-  if (secret !== expected) {
-    throw new TRPCError({ code: "FORBIDDEN", message: "Senha administrativa inválida." });
-  }
-}
+const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || "troque_este_segredo_jwt_com_mais_de_32_caracteres");
 
 export const appRouter = router({
-  system: systemRouter,
+  // --- AUTHENTICATION ---
   auth: router({
-    me: publicProcedure.query((opts) => opts.ctx.user),
+    login: publicProcedure
+      .input(z.object({ email: z.string().email(), password: z.string() }))
+      .mutation(async ({ input, ctx }) => {
+        const admin = await db.getAdminByEmail(input.email);
+        if (!admin || !admin.active) {
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "Credenciais inválidas ou conta inativa." });
+        }
+
+        const valid = await bcrypt.compare(input.password, admin.passwordHash);
+        if (!valid) {
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "Credenciais inválidas." });
+        }
+
+        // Gerar JWT
+        const token = await new SignJWT({ sub: String(admin.id), role: admin.role })
+          .setProtectedHeader({ alg: "HS256" })
+          .setIssuedAt()
+          .setExpirationTime("24h")
+          .sign(JWT_SECRET);
+
+        // Setar Cookie
+        ctx.res.cookie("admin_token", token, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: "lax",
+          maxAge: 24 * 60 * 60 * 1000, // 24h
+        });
+
+        await db.createAuditLog({ adminUserId: admin.id, action: "login", entityType: "admin_user", entityId: admin.id });
+
+        return { success: true, user: { id: admin.id, name: admin.name, role: admin.role } };
+      }),
+
+    me: publicProcedure.query(({ ctx }) => {
+      if (!ctx.admin) return null;
+      return { id: ctx.admin.id, name: ctx.admin.name, role: ctx.admin.role };
+    }),
+
     logout: publicProcedure.mutation(({ ctx }) => {
-      const cookieOptions = getSessionCookieOptions(ctx.req);
-      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
-      return { success: true } as const;
+      ctx.res.clearCookie("admin_token");
+      return { success: true };
     }),
   }),
+
+  // --- PUBLIC RIFA ROUTES ---
   rifa: router({
+    list: publicProcedure.query(async () => {
+      return db.listAllRifas();
+    }),
     public: publicProcedure
       .input(z.object({ slug: z.string().default("rifa-beneficente") }))
       .query(async ({ input }) => {
@@ -42,6 +75,7 @@ export const appRouter = router({
           nome: z.string().min(2, "Informe o nome do comprador."),
           telefone: z.string().min(8, "Informe um WhatsApp válido."),
           email: z.string().email().optional().or(z.literal("")),
+          comprovanteUrl: z.string().optional(),
         }),
       )
       .mutation(async ({ input }) => {
@@ -57,51 +91,23 @@ export const appRouter = router({
       return pedido;
     }),
   }),
-  admin: router({
-    dashboard: publicProcedure.input(adminSecret).query(async ({ input }) => {
-      assertAdmin(input.adminSecret);
-      const [pedidos, stats, rifa] = await Promise.all([db.listPedidos(), db.getAdminStats(), db.getPublicRifa()]);
-      return { pedidos, stats, rifa };
-    }),
-    uploadImagemRifa: publicProcedure
-      .input(
-        adminSecret.extend({
-          fileName: z.string().min(1),
-          contentType: z.string().startsWith("image/"),
-          base64: z.string().min(20),
-        }),
-      )
-      .mutation(async ({ input }) => {
-        assertAdmin(input.adminSecret);
-        const buffer = Buffer.from(input.base64, "base64");
-        if (buffer.length > 8 * 1024 * 1024) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Imagem muito grande. Limite de 8MB." });
-        }
 
-        const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, "-");
-        const result = await storagePut(`rifas/${Date.now()}-${safeName}`, buffer, input.contentType);
-        return { url: result.url };
-      }),
-    confirmarPedido: publicProcedure.input(adminSecret.extend({ pedidoId: z.number().int().positive() })).mutation(async ({ input }) => {
-      assertAdmin(input.adminSecret);
-      try {
-        return await db.confirmarPedido(input.pedidoId);
-      } catch (error) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Erro ao confirmar pedido." });
-      }
+  // --- ADMIN PROTECTED ROUTES ---
+  admin: router({
+    dashboard: adminProcedure.query(async () => {
+      const [pedidos, stats, rifas] = await Promise.all([
+        db.listPedidos(),
+        db.getAdminStats(),
+        db.listAllRifas()
+      ]);
+      return { pedidos, stats, rifas };
     }),
-    cancelarPedido: publicProcedure.input(adminSecret.extend({ pedidoId: z.number().int().positive() })).mutation(async ({ input }) => {
-      assertAdmin(input.adminSecret);
-      try {
-        return await db.cancelarPedido(input.pedidoId);
-      } catch (error) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Erro ao cancelar pedido." });
-      }
-    }),
-    salvarRifa: publicProcedure
+
+    // Gestão de Rifas
+    salvarRifa: adminProcedure
       .input(
-        adminSecret.extend({
-          id: z.number().int().positive(),
+        z.object({
+          id: z.number().int().optional(),
           slug: z.string().min(3),
           nome: z.string().min(3),
           descricao: z.string().min(10),
@@ -115,35 +121,111 @@ export const appRouter = router({
           ativa: z.boolean(),
         }),
       )
-      .mutation(async ({ input }) => {
-        assertAdmin(input.adminSecret);
-        const { adminSecret: _, ...rifa } = input;
-
-        // FIX: Sanitiza o preço removendo símbolo de moeda e convertendo vírgula para ponto.
-        // Suporta formatos vindos do frontend: "R$ 20,00" / "R$20,00" / "20,00" / "20.00"
-        let precoBilheteSanitizado = String(rifa.precoBilhete)
+      .mutation(async ({ input, ctx }) => {
+        let precoBilheteSanitizado = String(input.precoBilhete)
           .trim()
-          .replace(/R\$\s*/gi, "")   // Remove "R$" e espaço opcional
-          .replace(/\./g, "")        // Remove separador de milhar (ex: "1.000,00" → "1000,00")
-          .replace(",", ".")         // Converte vírgula decimal para ponto
+          .replace(/R\$\s*/gi, "")
+          .replace(/\./g, "")
+          .replace(",", ".")
           .trim();
 
-        // Valida e normaliza para sempre ter 2 casas decimais
         const precoNumerico = parseFloat(precoBilheteSanitizado);
-        if (isNaN(precoNumerico) || precoNumerico < 0 || precoNumerico > 999999.99) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Preço do bilhete inválido. Use um valor entre 0.00 e 999999.99" });
+        if (isNaN(precoNumerico) || precoNumerico < 0) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Preço inválido." });
         }
 
-        // Garante que o preço é armazenado como string com exatamente 2 casas decimais
-        const precoBilheteFormatado = precoNumerico.toFixed(2);
+        const data = {
+          ...input,
+          precoBilhete: precoNumerico.toFixed(2),
+          premio: input.premio || null,
+          dataSorteio: input.dataSorteio || null,
+          imagemUrl: input.imagemUrl || null,
+        };
 
-        return db.updateRifa({
-          ...rifa,
-          precoBilhete: precoBilheteFormatado,
-          premio: rifa.premio || null,
-          dataSorteio: rifa.dataSorteio || null,
-          imagemUrl: rifa.imagemUrl || null,
+        let result;
+        if (input.id) {
+          result = await db.updateRifa({ ...data, id: input.id });
+          await db.createAuditLog({ adminUserId: ctx.admin.id, action: "update_rifa", entityType: "rifa", entityId: result.id, details: { nome: result.nome } });
+        } else {
+          result = await db.createRifa(data);
+          await db.createAuditLog({ adminUserId: ctx.admin.id, action: "create_rifa", entityType: "rifa", entityId: result.id, details: { nome: result.nome } });
+        }
+        return result;
+      }),
+
+    // Gestão de Prêmios
+    listPremios: adminProcedure.input(z.object({ rifaId: z.number() })).query(async ({ input }) => {
+      return db.listPremios(input.rifaId);
+    }),
+    salvarPremio: adminProcedure
+      .input(z.object({
+        id: z.number().optional(),
+        rifaId: z.number(),
+        titulo: z.string().min(2),
+        descricao: z.string().optional(),
+        imagemUrl: z.string().optional(),
+        ordem: z.number().default(0),
+        ativo: z.boolean().default(true),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const result = await db.upsertPremio(input);
+        await db.createAuditLog({ 
+          adminUserId: ctx.admin.id, 
+          action: input.id ? "update_premio" : "create_premio", 
+          entityType: "premio", 
+          entityId: result.id, 
+          details: { titulo: result.titulo, rifaId: result.rifaId } 
         });
+        return result;
+      }),
+    removerPremio: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input, ctx }) => {
+      await db.deletePremio(input.id);
+      await db.createAuditLog({ adminUserId: ctx.admin.id, action: "delete_premio", entityType: "premio", entityId: input.id });
+      return { success: true };
+    }),
+
+    // Gestão de Pedidos
+    confirmarPedido: adminProcedure.input(z.object({ pedidoId: z.number().int().positive() })).mutation(async ({ input, ctx }) => {
+      const result = await db.confirmarPedido(input.pedidoId, ctx.admin.id);
+      await db.createAuditLog({ adminUserId: ctx.admin.id, action: "confirm_order", entityType: "pedido", entityId: input.pedidoId });
+      return result;
+    }),
+    cancelarPedido: adminProcedure.input(z.object({ pedidoId: z.number().int().positive() })).mutation(async ({ input, ctx }) => {
+      const result = await db.cancelarPedido(input.pedidoId, ctx.admin.id);
+      await db.createAuditLog({ adminUserId: ctx.admin.id, action: "cancel_order", entityType: "pedido", entityId: input.pedidoId });
+      return result;
+    }),
+
+    // Upload de Imagens
+    uploadImagem: adminProcedure
+      .input(z.object({
+        fileName: z.string().min(1),
+        contentType: z.string().startsWith("image/"),
+        base64: z.string().min(20),
+        assetType: z.enum(["rifa_main", "premio", "comprovante"]),
+        rifaId: z.number().optional(),
+        premioId: z.number().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const buffer = Buffer.from(input.base64, "base64");
+        if (buffer.length > 8 * 1024 * 1024) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Imagem muito grande (máx 8MB)." });
+        }
+
+        const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, "-");
+        const folder = input.assetType === "comprovante" ? "comprovantes" : "rifas";
+        const result = await storagePut(`${folder}/${Date.now()}-${safeName}`, buffer, input.contentType);
+        
+        // Opcional: Salvar metadados em rifa_assets se necessário para auditoria futura
+        
+        await db.createAuditLog({ 
+          adminUserId: ctx.admin.id, 
+          action: "upload_image", 
+          entityType: input.assetType, 
+          details: { url: result.url, type: input.assetType } 
+        });
+
+        return { url: result.url };
       }),
   }),
 });

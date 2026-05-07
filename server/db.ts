@@ -1,7 +1,12 @@
 import { and, asc, count, desc, eq, inArray, sql, sum } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
-import { bilhetes, compradores, InsertRifa, InsertUser, pedidos, rifas, users, type OrderStatus } from "../drizzle/schema";
+import bcrypt from "bcryptjs";
+import { 
+  bilhetes, compradores, InsertRifa, InsertUser, pedidos, rifas, users, 
+  adminUsers, auditLogs, premios, rifaAssets,
+  type OrderStatus, type AdminUser, type InsertAdminUser 
+} from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
 const { Pool } = pg;
@@ -20,6 +25,71 @@ function requireDbSync(db: Awaited<ReturnType<typeof getDb>>) {
   if (!db) throw new Error("DATABASE_URL não configurada. Configure PostgreSQL antes de usar o sistema.");
   return db;
 }
+
+// --- ADMIN AUTH & BOOTSTRAP ---
+
+export async function bootstrapAdmin() {
+  const db = requireDbSync(await getDb());
+  
+  // Verifica se já existe algum admin
+  const [existingAdmin] = await db.select().from(adminUsers).limit(1);
+  if (existingAdmin) return;
+
+  const email = process.env.ADMIN_EMAIL;
+  const password = process.env.ADMIN_PASSWORD;
+  const name = process.env.ADMIN_NAME || "Super Admin";
+
+  if (!email || !password) {
+    console.warn("[bootstrap] ADMIN_EMAIL ou ADMIN_PASSWORD não configurados. Pulando bootstrap.");
+    return;
+  }
+
+  console.log(`[bootstrap] Criando primeiro super_admin: ${email}`);
+  const passwordHash = await bcrypt.hash(password, 10);
+
+  await db.insert(adminUsers).values({
+    name,
+    email,
+    passwordHash,
+    role: "super_admin",
+    active: true,
+  });
+}
+
+export async function getAdminByEmail(email: string) {
+  const db = requireDbSync(await getDb());
+  const [admin] = await db.select().from(adminUsers).where(eq(adminUsers.email, email)).limit(1);
+  return admin;
+}
+
+export async function getAdminById(id: number) {
+  const db = requireDbSync(await getDb());
+  const [admin] = await db.select().from(adminUsers).where(eq(adminUsers.id, id)).limit(1);
+  return admin;
+}
+
+// --- AUDIT LOGS ---
+
+export async function createAuditLog(input: { 
+  adminUserId?: number; 
+  action: string; 
+  entityType?: string; 
+  entityId?: number; 
+  details?: any;
+  ipAddress?: string;
+}) {
+  const db = requireDbSync(await getDb());
+  await db.insert(auditLogs).values({
+    adminUserId: input.adminUserId || null,
+    action: input.action,
+    entityType: input.entityType || null,
+    entityId: input.entityId || null,
+    details: input.details || null,
+    ipAddress: input.ipAddress || null,
+  });
+}
+
+// --- USERS (PUBLIC) ---
 
 export async function upsertUser(user: InsertUser): Promise<void> {
   if (!user.openId) throw new Error("User openId is required for upsert");
@@ -54,6 +124,8 @@ export async function getUserByOpenId(openId: string) {
   return result[0];
 }
 
+// --- RIFAS & PEDIDOS ---
+
 export function gerarCodigoPedido() {
   return `RF${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
 }
@@ -72,33 +144,53 @@ export async function getPublicRifa(slug = "rifa-beneficente") {
   const db = requireDbSync(await getDb());
   const [rifa] = await db.select().from(rifas).where(eq(rifas.slug, slug)).limit(1);
   if (!rifa) return null;
+  
   const [confirmed] = await db.select({ total: count() }).from(bilhetes).where(eq(bilhetes.rifaId, rifa.id));
   const [pending] = await db.select({ total: sum(pedidos.quantidade) }).from(pedidos).where(and(eq(pedidos.rifaId, rifa.id), eq(pedidos.status, "pendente")));
+  
+  // Buscar prêmios da rifa
+  const rifaPremios = await db.select().from(premios).where(and(eq(premios.rifaId, rifa.id), eq(premios.ativo, true))).orderBy(asc(premios.ordem));
+
   return {
     ...rifa,
-    // Garante que precoBilhete sempre é uma string formatada com 2 casas decimais
     precoBilhete: String(rifa.precoBilhete),
     vendidos: Number(confirmed?.total ?? 0),
     pendentes: Number(pending?.total ?? 0),
     disponiveis: Math.max(0, rifa.totalBilhetes - Number(confirmed?.total ?? 0)),
+    premios: rifaPremios,
   };
 }
 
-export async function createPedido(input: { rifaId: number; quantidade: number; nome: string; telefone: string; email?: string | null }) {
+export async function listAllRifas() {
+  const db = requireDbSync(await getDb());
+  return db.select().from(rifas).orderBy(desc(rifas.createdAt));
+}
+
+export async function createPedido(input: { 
+  rifaId: number; 
+  quantidade: number; 
+  nome: string; 
+  telefone: string; 
+  email?: string | null;
+  comprovanteUrl?: string | null;
+}) {
   const db = requireDbSync(await getDb());
   const [rifa] = await db.select().from(rifas).where(eq(rifas.id, input.rifaId)).limit(1);
   if (!rifa || !rifa.ativa) throw new Error("Rifa indisponível.");
+  
   const [usados] = await db.select({ total: count() }).from(bilhetes).where(eq(bilhetes.rifaId, rifa.id));
   if (Number(usados?.total ?? 0) + input.quantidade > rifa.totalBilhetes) throw new Error("Não há bilhetes suficientes disponíveis.");
-  // Converte precoBilhete para número de forma segura
+  
   const precoBilheteNumerico = parseFloat(String(rifa.precoBilhete));
   const valorTotal = (precoBilheteNumerico * input.quantidade).toFixed(2);
+  
   const [comprador] = await db.insert(compradores).values({
     nome: input.nome.trim(),
     telefone: input.telefone.trim(),
     email: input.email?.trim() || null,
     updatedAt: new Date(),
   }).returning();
+  
   const [pedido] = await db.insert(pedidos).values({
     codigo: gerarCodigoPedido(),
     rifaId: rifa.id,
@@ -106,8 +198,10 @@ export async function createPedido(input: { rifaId: number; quantidade: number; 
     quantidade: input.quantidade,
     valorTotal,
     status: "pendente",
+    comprovanteUrl: input.comprovanteUrl || null,
     updatedAt: new Date(),
   }).returning();
+  
   return getPedidoDetalhado(pedido.codigo);
 }
 
@@ -124,7 +218,6 @@ export async function getPedidoDetalhado(codigo: string) {
   const numeros = await db.select().from(bilhetes).where(eq(bilhetes.pedidoId, row.pedido.id)).orderBy(asc(bilhetes.numero));
   return {
     ...row,
-    // Garante que valores monetários são sempre strings formatadas
     pedido: {
       ...row.pedido,
       valorTotal: String(row.pedido.valorTotal),
@@ -148,7 +241,6 @@ export async function listPedidos() {
   const tickets = pedidoIds.length ? await db.select().from(bilhetes).where(inArray(bilhetes.pedidoId, pedidoIds)).orderBy(asc(bilhetes.numero)) : [];
   return rows.map(row => ({
     ...row,
-    // Garante que valores monetários são sempre strings formatadas
     pedido: {
       ...row.pedido,
       valorTotal: String(row.pedido.valorTotal),
@@ -173,41 +265,89 @@ export async function getAdminStats() {
   };
 }
 
-export async function confirmarPedido(pedidoId: number) {
+export async function confirmarPedido(pedidoId: number, adminUserId?: number) {
   const db = requireDbSync(await getDb());
   return await db.transaction(async (tx) => {
     const [pedido] = await tx.select().from(pedidos).where(eq(pedidos.id, pedidoId)).for("update").limit(1);
     if (!pedido) throw new Error("Pedido não encontrado.");
     if (pedido.status !== "pendente") throw new Error("Somente pedidos pendentes podem ser confirmados.");
+    
     const [rifa] = await tx.select().from(rifas).where(eq(rifas.id, pedido.rifaId)).for("update").limit(1);
     if (!rifa) throw new Error("Rifa não encontrada.");
+    
     const existentes = await tx.select({ numero: bilhetes.numero }).from(bilhetes).where(eq(bilhetes.rifaId, pedido.rifaId));
     const numeros = calcularNumerosDisponiveis(rifa.totalBilhetes, existentes.map(x => x.numero), pedido.quantidade);
-    await tx.insert(bilhetes).values(numeros.map(numero => ({ rifaId: pedido.rifaId, pedidoId: pedido.id, compradorId: pedido.compradorId, numero })));
-    await tx.update(pedidos).set({ status: "confirmado", confirmadoEm: new Date(), updatedAt: new Date() }).where(eq(pedidos.id, pedido.id));
+    
+    await tx.insert(bilhetes).values(numeros.map(numero => ({ 
+      rifaId: pedido.rifaId, 
+      pedidoId: pedido.id, 
+      compradorId: pedido.compradorId, 
+      numero 
+    })));
+    
+    await tx.update(pedidos).set({ 
+      status: "confirmado", 
+      confirmadoEm: new Date(), 
+      confirmadoPorUserId: adminUserId || null,
+      updatedAt: new Date() 
+    }).where(eq(pedidos.id, pedido.id));
+    
     return { numeros };
   });
 }
 
-export async function cancelarPedido(pedidoId: number) {
+export async function cancelarPedido(pedidoId: number, adminUserId?: number) {
   const db = requireDbSync(await getDb());
   const [pedido] = await db.select().from(pedidos).where(eq(pedidos.id, pedidoId)).limit(1);
   if (!pedido) throw new Error("Pedido não encontrado.");
   if (pedido.status === "cancelado") return { success: true };
+  
   await db.transaction(async (tx) => {
     await tx.delete(bilhetes).where(eq(bilhetes.pedidoId, pedidoId));
-    await tx.update(pedidos).set({ status: "cancelado", canceladoEm: new Date(), updatedAt: new Date() }).where(eq(pedidos.id, pedidoId));
+    await tx.update(pedidos).set({ 
+      status: "cancelado", 
+      canceladoEm: new Date(), 
+      canceladoPorUserId: adminUserId || null,
+      updatedAt: new Date() 
+    }).where(eq(pedidos.id, pedidoId));
   });
   return { success: true };
+}
+
+export async function createRifa(input: InsertRifa) {
+  const db = requireDbSync(await getDb());
+  const [created] = await db.insert(rifas).values({ ...input, updatedAt: new Date() }).returning();
+  return { ...created, precoBilhete: String(created.precoBilhete) };
 }
 
 export async function updateRifa(input: InsertRifa & { id: number }) {
   const db = requireDbSync(await getDb());
   const { id, ...data } = input;
   const [updated] = await db.update(rifas).set({ ...data, updatedAt: new Date() }).where(eq(rifas.id, id)).returning();
-  // Garante que precoBilhete é sempre uma string formatada
-  return {
-    ...updated,
-    precoBilhete: String(updated.precoBilhete),
-  };
+  return { ...updated, precoBilhete: String(updated.precoBilhete) };
+}
+
+// --- PREMIOS ---
+
+export async function listPremios(rifaId: number) {
+  const db = requireDbSync(await getDb());
+  return db.select().from(premios).where(eq(premios.rifaId, rifaId)).orderBy(asc(premios.ordem));
+}
+
+export async function upsertPremio(input: InsertPremio & { id?: number }) {
+  const db = requireDbSync(await getDb());
+  if (input.id) {
+    const { id, ...data } = input;
+    const [updated] = await db.update(premios).set({ ...data, updatedAt: new Date() }).where(eq(premios.id, id)).returning();
+    return updated;
+  } else {
+    const [created] = await db.insert(premios).values({ ...input, updatedAt: new Date() }).returning();
+    return created;
+  }
+}
+
+export async function deletePremio(id: number) {
+  const db = requireDbSync(await getDb());
+  await db.delete(premios).where(eq(premios.id, id));
+  return { success: true };
 }
