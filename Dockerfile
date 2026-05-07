@@ -19,7 +19,12 @@ COPY --from=builder /app/pnpm-lock.yaml ./pnpm-lock.yaml
 COPY --from=builder /app/drizzle ./drizzle
 COPY --from=builder /app/scripts ./scripts
 
-# Instala apenas dependências de produção para economizar espaço e tempo
+# CRÍTICO: copia patches/ antes do pnpm install --prod
+# O pnpm exige que os arquivos de patch existam mesmo em instalação de produção,
+# pois o pnpm-lock.yaml referencia patches/wouter@3.7.1.patch
+COPY --from=builder /app/patches ./patches
+
+# Instala apenas dependências de produção
 RUN pnpm install --prod --frozen-lockfile
 
 # Cria o diretório de uploads
