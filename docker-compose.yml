@@ -23,7 +23,11 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
+      UPLOAD_DIR: /app/uploads
+      PUBLIC_UPLOAD_BASE_URL: /uploads
       DATABASE_URL: postgresql://${POSTGRES_USER:-rifas}:${POSTGRES_PASSWORD:-troque_esta_senha_do_banco}@postgres:5432/${POSTGRES_DB:-rifas}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@admin.com}
+      ADMIN_NAME: ${ADMIN_NAME:-Administrador}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-troque_esta_senha_do_admin}
       JWT_SECRET: ${JWT_SECRET:-troque_este_segredo_jwt_com_mais_de_32_caracteres}
       VITE_APP_TITLE: ${VITE_APP_TITLE:-Sistema de Rifas Beneficentes}
