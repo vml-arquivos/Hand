@@ -10,17 +10,40 @@ const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || "troque_es
 
 /**
  * Sanitiza e converte o valor do preço do bilhete para número.
- * Aceita formatos: "10,00", "10.00", "R$ 10,00", "R$10.50", "10" etc.
+ * Aceita formatos: "10,00", "10.00", "R$ 10,00", "R$10.50", "1.000,00", "10" etc.
  * Retorna NaN se o valor for inválido.
+ *
+ * CORREÇÃO: detecta se o valor usa vírgula como decimal (pt-BR) ou ponto como decimal (en-US)
+ * antes de remover separadores de milhar, evitando que "2000.00" vire 200000.
  */
 function sanitizarPreco(valor: string | number): number {
   if (typeof valor === "number") return isNaN(valor) ? NaN : valor;
+
   const limpo = String(valor)
     .trim()
-    .replace(/R\$\s*/gi, "")   // Remove "R$" com ou sem espaço
-    .replace(/\s+/g, "")       // Remove espaços restantes
-    .replace(/\./g, "")        // Remove pontos de milhar (ex: 1.000,00 → 100000)
-    .replace(",", ".");        // Converte vírgula decimal para ponto
+    .replace(/R\$\s*/gi, "")
+    .replace(/\s+/g, "");
+
+  // Formato pt-BR: usa ponto como milhar e vírgula como decimal → "1.000,50"
+  // Formato en-US: usa vírgula como milhar e ponto como decimal → "1,000.50"
+  // Formato simples: apenas número → "10.00" ou "10,00"
+
+  if (/\d\.\d{3},\d{2}$/.test(limpo)) {
+    // pt-BR com milhar: "1.000,50" → remove pontos de milhar, troca vírgula por ponto
+    return parseFloat(limpo.replace(/\./g, "").replace(",", "."));
+  }
+
+  if (/\d,\d{3}\.\d{2}$/.test(limpo)) {
+    // en-US com milhar: "1,000.50" → remove vírgulas de milhar
+    return parseFloat(limpo.replace(/,/g, ""));
+  }
+
+  if (/,/.test(limpo) && !/\./.test(limpo)) {
+    // Só vírgula, sem ponto: "10,50" → decimal pt-BR
+    return parseFloat(limpo.replace(",", "."));
+  }
+
+  // Só ponto ou sem separador: "10.50", "1000", "10.00" → já é válido
   return parseFloat(limpo);
 }
 
@@ -40,19 +63,17 @@ export const appRouter = router({
           throw new TRPCError({ code: "UNAUTHORIZED", message: "Credenciais inválidas." });
         }
 
-        // Gerar JWT
         const token = await new SignJWT({ sub: String(admin.id), role: admin.role })
           .setProtectedHeader({ alg: "HS256" })
           .setIssuedAt()
           .setExpirationTime("24h")
           .sign(JWT_SECRET);
 
-        // Setar Cookie
         ctx.res.cookie("admin_token", token, {
           httpOnly: true,
           secure: process.env.NODE_ENV === "production",
           sameSite: "lax",
-          maxAge: 24 * 60 * 60 * 1000, // 24h
+          maxAge: 24 * 60 * 60 * 1000,
         });
 
         await db.createAuditLog({ adminUserId: admin.id, action: "login", entityType: "admin_user", entityId: admin.id });
@@ -119,7 +140,6 @@ export const appRouter = router({
       return { pedidos, stats, rifas };
     }),
 
-    // Gestão de Rifas
     salvarRifa: adminProcedure
       .input(
         z.object({
@@ -131,7 +151,6 @@ export const appRouter = router({
           dataSorteio: z.string().optional().or(z.literal("")),
           imagemUrl: z.string().optional().or(z.literal("")),
           totalBilhetes: z.number().int().min(1),
-          // Aceita string ou número — o frontend pode enviar "10.00" ou 10.00
           precoBilhete: z.union([z.string().min(1), z.number()]),
           pixChave: z.string().min(3),
           pixCopiaCola: z.string().min(10),
@@ -139,7 +158,6 @@ export const appRouter = router({
         }),
       )
       .mutation(async ({ input, ctx }) => {
-        // Sanitiza e valida o preço
         const precoNumerico = sanitizarPreco(input.precoBilhete);
         if (isNaN(precoNumerico) || precoNumerico < 0.01) {
           throw new TRPCError({
@@ -148,7 +166,6 @@ export const appRouter = router({
           });
         }
 
-        // Garante que o preço seja salvo como string com 2 casas decimais
         const precoFormatado = precoNumerico.toFixed(2);
 
         const data = {
@@ -182,7 +199,6 @@ export const appRouter = router({
         return result;
       }),
 
-    // Gestão de Prêmios
     listPremios: adminProcedure.input(z.object({ rifaId: z.number() })).query(async ({ input }) => {
       return db.listPremios(input.rifaId);
     }),
@@ -213,7 +229,6 @@ export const appRouter = router({
       return { success: true };
     }),
 
-    // Gestão de Pedidos
     confirmarPedido: adminProcedure.input(z.object({ pedidoId: z.number().int().positive() })).mutation(async ({ input, ctx }) => {
       const result = await db.confirmarPedido(input.pedidoId, ctx.admin.id);
       await db.createAuditLog({ adminUserId: ctx.admin.id, action: "confirm_order", entityType: "pedido", entityId: input.pedidoId });
@@ -225,7 +240,6 @@ export const appRouter = router({
       return result;
     }),
 
-    // Upload de Imagens
     uploadImagem: adminProcedure
       .input(z.object({
         fileName: z.string().min(1),
@@ -241,7 +255,6 @@ export const appRouter = router({
           throw new TRPCError({ code: "BAD_REQUEST", message: "Imagem muito grande (máx 8MB)." });
         }
 
-        // Sanitiza o nome do arquivo: mantém apenas caracteres seguros
         const safeName = input.fileName
           .replace(/[^a-zA-Z0-9._-]/g, "-")
           .replace(/-+/g, "-")
