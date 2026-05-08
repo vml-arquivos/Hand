@@ -5,6 +5,7 @@ import { SignJWT } from "jose";
 import { adminProcedure, publicProcedure, router } from "./_core/trpc";
 import * as db from "./db";
 import { storagePut } from "./storage";
+import { gerarPixCopiaCola } from "./pix";
 
 const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || "troque_este_segredo_jwt_com_mais_de_32_caracteres");
 
@@ -119,6 +120,30 @@ export const appRouter = router({
       return { pedidos, stats, rifas };
     }),
 
+    // Geração automática de Pix Copia e Cola
+    gerarPix: adminProcedure
+      .input(z.object({
+        pixChave: z.string().min(3),
+        nomeRecebedor: z.string().min(2),
+        cidade: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        try {
+          const resultado = gerarPixCopiaCola({
+            chave: input.pixChave,
+            nomeRecebedor: input.nomeRecebedor,
+            cidade: input.cidade || "Brasil",
+            transactionId: "RIFA",
+          });
+          return resultado;
+        } catch (err) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Não foi possível gerar o Pix para esta chave. Verifique o formato.",
+          });
+        }
+      }),
+
     // Gestão de Rifas
     salvarRifa: adminProcedure
       .input(
@@ -134,7 +159,10 @@ export const appRouter = router({
           // Aceita string ou número — o frontend pode enviar "10.00" ou 10.00
           precoBilhete: z.union([z.string().min(1), z.number()]),
           pixChave: z.string().min(3),
+          // pixCopiaCola agora pode ser gerado automaticamente
           pixCopiaCola: z.string().min(10),
+          nomeRecebedor: z.string().optional(),
+          cidadeRecebedor: z.string().optional(),
           ativa: z.boolean(),
         }),
       )
