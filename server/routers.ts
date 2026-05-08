@@ -149,6 +149,13 @@ export const appRouter = router({
       return { pedidos, stats, rifas };
     }),
 
+    // Lista completa de bilhetes confirmados para controle do sorteio
+    listBilhetes: adminProcedure
+      .input(z.object({ rifaId: z.number().int().positive() }))
+      .query(async ({ input }) => {
+        return db.listBilhetesCompleto(input.rifaId);
+      }),
+
     // Geração automática de Pix Copia e Cola estático (sem expiração)
     gerarPix: adminProcedure
       .input(z.object({

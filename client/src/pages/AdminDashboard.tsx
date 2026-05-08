@@ -13,20 +13,25 @@ import {
   CheckCircle2,
   Clock3,
   Copy,
+  Download,
   Edit2,
   Gift,
   ImagePlus,
+  ListOrdered,
   Loader2,
   LogOut,
   MessageCircle,
   Plus,
   QrCode,
   RefreshCw,
+  Search,
   Settings,
   ShieldCheck,
   TicketCheck,
   Trash2,
+  Trophy,
   UploadCloud,
+  Users,
   XCircle,
   Zap,
 } from "lucide-react";
@@ -852,6 +857,10 @@ export default function AdminDashboard() {
               <UploadCloud className="mr-1.5 h-4 w-4" />
               Flyer
             </TabsTrigger>
+            <TabsTrigger value="bilhetes" className="flex-1 text-xs sm:text-sm">
+              <ListOrdered className="mr-1.5 h-4 w-4" />
+              Bilhetes
+            </TabsTrigger>
           </TabsList>
 
           {/* ── Tab: Pedidos ──────────────────────────────────────────────── */}
@@ -1195,8 +1204,218 @@ export default function AdminDashboard() {
               </div>
             )}
           </TabsContent>
+
+          {/* ── Tab: Bilhetes (controle do sorteio) ─────────────────── */}
+          <TabsContent value="bilhetes">
+            <BilhetesTab rifas={rifas ?? []} />
+          </TabsContent>
         </Tabs>
       </div>
+    </div>
+  );
+}
+
+// ─── Componente BilhetesTab ────────────────────────────────────────────────
+type RifaItem = { id: number; nome: string; totalBilhetes: number };
+
+function BilhetesTab({ rifas }: { rifas: RifaItem[] }) {
+  const [rifaId, setRifaId] = useState<number | null>(rifas[0]?.id ?? null);
+  const [busca, setBusca] = useState("");
+
+  const { data: bilhetes, isLoading } = trpc.admin.listBilhetes.useQuery(
+    { rifaId: rifaId! },
+    { enabled: !!rifaId },
+  );
+
+  const moeda = new Intl.NumberFormat("pt-BR");
+
+  const filtrados = (bilhetes ?? []).filter(b => {
+    if (!busca) return true;
+    const q = busca.toLowerCase();
+    return (
+      String(b.numero).includes(q) ||
+      b.compradorNome.toLowerCase().includes(q) ||
+      b.compradorTelefone.includes(q) ||
+      b.pedidoCodigo.toLowerCase().includes(q)
+    );
+  });
+
+  function exportarCSV() {
+    if (!filtrados.length) return;
+    const header = "Numero,Nome,Telefone,Email,Pedido,Data";
+    const rows = filtrados.map(b =>
+      [
+        b.numero,
+        `"${b.compradorNome}"`,
+        b.compradorTelefone,
+        b.compradorEmail ?? "",
+        b.pedidoCodigo,
+        new Date(b.createdAt).toLocaleString("pt-BR"),
+      ].join(",")
+    );
+    const csv = [header, ...rows].join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `bilhetes-sorteio-${rifaId}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function sortearVencedor() {
+    if (!filtrados.length) return;
+    const idx = Math.floor(Math.random() * filtrados.length);
+    const vencedor = filtrados[idx];
+    toast.success(
+      `🎉 Bilhete sorteado: #${String(vencedor.numero).padStart(4, "0")} — ${vencedor.compradorNome}`,
+      { duration: 10000 },
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Seletor de rifa */}
+      {rifas.length > 1 && (
+        <div className="flex flex-wrap gap-2">
+          {rifas.map(r => (
+            <button
+              key={r.id}
+              onClick={() => setRifaId(r.id)}
+              className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${
+                rifaId === r.id
+                  ? "bg-[#21180f] text-white"
+                  : "bg-white text-[#593b1f] hover:bg-[#f4dfbc]"
+              }`}
+            >
+              {r.nome}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Barra de ferramentas */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9b6b35]" />
+          <Input
+            placeholder="Buscar por número, nome, telefone ou código..."
+            value={busca}
+            onChange={e => setBusca(e.target.value)}
+            className="h-10 border-[#d5b078] pl-9 focus-visible:ring-[#a06a31]"
+          />
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-10 border-[#d5b078] text-[#593b1f] hover:bg-[#f4dfbc]"
+          onClick={exportarCSV}
+          disabled={!filtrados.length}
+        >
+          <Download className="mr-1.5 h-4 w-4" />
+          Exportar CSV
+        </Button>
+        <Button
+          size="sm"
+          className="h-10 bg-[#21180f] text-white hover:bg-[#3d2e1e]"
+          onClick={sortearVencedor}
+          disabled={!filtrados.length}
+        >
+          <Trophy className="mr-1.5 h-4 w-4" />
+          Sortear
+        </Button>
+      </div>
+
+      {/* Resumo */}
+      {bilhetes && (
+        <div className="flex flex-wrap gap-4 rounded-2xl bg-white p-4 shadow-sm">
+          <div className="flex items-center gap-2">
+            <ListOrdered className="h-5 w-5 text-[#a06a31]" />
+            <div>
+              <p className="text-xs text-[#9b6b35]">Bilhetes confirmados</p>
+              <p className="text-xl font-bold text-[#1a0f06]">{moeda.format(bilhetes.length)}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Users className="h-5 w-5 text-[#a06a31]" />
+            <div>
+              <p className="text-xs text-[#9b6b35]">Compradores únicos</p>
+              <p className="text-xl font-bold text-[#1a0f06]">
+                {new Set(bilhetes.map(b => b.compradorTelefone)).size}
+              </p>
+            </div>
+          </div>
+          {busca && (
+            <div className="flex items-center gap-2">
+              <Search className="h-5 w-5 text-[#a06a31]" />
+              <div>
+                <p className="text-xs text-[#9b6b35]">Resultados da busca</p>
+                <p className="text-xl font-bold text-[#1a0f06]">{filtrados.length}</p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Lista de bilhetes */}
+      {isLoading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-[#a06a31]" />
+        </div>
+      ) : !bilhetes || bilhetes.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-[#d5b078] bg-white py-12 text-center">
+          <ListOrdered className="mx-auto mb-3 h-10 w-10 text-[#d5b078]" />
+          <p className="font-semibold text-[#2e2013]">Nenhum bilhete confirmado ainda</p>
+          <p className="mt-1 text-sm text-[#7a5a3a]">Os bilhetes aparecem aqui após a confirmação do pagamento.</p>
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-2xl border border-[#ecdcc5] bg-white shadow-sm">
+          {/* Cabeçalho da tabela */}
+          <div className="hidden grid-cols-[80px_1fr_160px_160px_120px] gap-4 border-b border-[#ecdcc5] bg-[#f7f1e8] px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-[#9b6b35] sm:grid">
+            <span>Número</span>
+            <span>Comprador</span>
+            <span>Telefone</span>
+            <span>Código do Pedido</span>
+            <span>Data</span>
+          </div>
+          {/* Linhas */}
+          <div className="divide-y divide-[#f0e8d8]">
+            {filtrados.map(b => (
+              <div
+                key={b.bilheteId}
+                className="grid grid-cols-1 gap-1 px-4 py-3 text-sm transition hover:bg-[#fdf8f2] sm:grid-cols-[80px_1fr_160px_160px_120px] sm:items-center sm:gap-4"
+              >
+                {/* Número */}
+                <span className="font-mono text-base font-bold text-[#1a0f06] sm:text-sm">
+                  {String(b.numero).padStart(4, "0")}
+                </span>
+                {/* Comprador */}
+                <div>
+                  <p className="font-semibold text-[#1a0f06]">{b.compradorNome}</p>
+                  {b.compradorEmail && (
+                    <p className="text-xs text-[#9b6b35]">{b.compradorEmail}</p>
+                  )}
+                </div>
+                {/* Telefone */}
+                <span className="text-[#593b1f]">{b.compradorTelefone}</span>
+                {/* Código do pedido */}
+                <a
+                  href={`/comprovante/${b.pedidoCodigo}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-mono text-xs text-[#a06a31] hover:underline"
+                >
+                  {b.pedidoCodigo}
+                </a>
+                {/* Data */}
+                <span className="text-xs text-[#9b6b35]">
+                  {new Date(b.createdAt).toLocaleDateString("pt-BR")}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

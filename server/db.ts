@@ -402,3 +402,33 @@ export async function deletePremio(id: number) {
   await db.delete(premios).where(eq(premios.id, id));
   return { success: true };
 }
+
+/**
+ * Lista todos os bilhetes confirmados de uma rifa com dados completos do comprador e pedido.
+ * Usado pelo painel admin para controle do sorteio.
+ */
+export async function listBilhetesCompleto(rifaId: number) {
+  const db = requireDbSync(await getDb());
+  const rows = await db
+    .select({
+      bilhete: bilhetes,
+      comprador: compradores,
+      pedido: pedidos,
+    })
+    .from(bilhetes)
+    .innerJoin(compradores, eq(bilhetes.compradorId, compradores.id))
+    .innerJoin(pedidos, eq(bilhetes.pedidoId, pedidos.id))
+    .where(eq(bilhetes.rifaId, rifaId))
+    .orderBy(asc(bilhetes.numero));
+
+  return rows.map(row => ({
+    numero: row.bilhete.numero,
+    bilheteId: row.bilhete.id,
+    pedidoCodigo: row.pedido.codigo,
+    pedidoId: row.pedido.id,
+    compradorNome: row.comprador.nome,
+    compradorTelefone: row.comprador.telefone,
+    compradorEmail: row.comprador.email ?? null,
+    createdAt: row.bilhete.createdAt,
+  }));
+}
