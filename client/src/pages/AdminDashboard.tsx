@@ -56,6 +56,7 @@ type RifaRow = {
   premio?: string | null;
   dataSorteio?: string | null;
   imagemUrl?: string | null;
+  thumbnailUrl?: string | null;
   totalBilhetes: number;
   precoBilhete: string;
   pixChave: string;
@@ -191,6 +192,7 @@ function RifaForm({ rifa, onSaved }: { rifa?: RifaRow | null; onSaved: () => voi
     premio: rifa?.premio ?? "",
     dataSorteio: rifa?.dataSorteio ?? "",
     imagemUrl: rifa?.imagemUrl ?? "",
+    thumbnailUrl: rifa?.thumbnailUrl ?? "",
     totalBilhetes: String(rifa?.totalBilhetes ?? "100"),
     precoBilhete: formatarPrecoParaInput(rifa?.precoBilhete ?? "10"),
     pixChave: rifa?.pixChave ?? "",
@@ -283,6 +285,7 @@ function RifaForm({ rifa, onSaved }: { rifa?: RifaRow | null; onSaved: () => voi
       premio: form.premio.trim() || "",
       dataSorteio: form.dataSorteio.trim() || "",
       imagemUrl: form.imagemUrl.trim() || "",
+      thumbnailUrl: form.thumbnailUrl.trim() || "",
       totalBilhetes,
       precoBilhete: precoNumerico.toFixed(2),
       pixChave: form.pixChave.trim(),
@@ -540,28 +543,42 @@ function RifaForm({ rifa, onSaved }: { rifa?: RifaRow | null; onSaved: () => voi
 
       <Separator className="bg-[#ecdcc5]" />
 
-      {/* Upload de imagem */}
+       {/* Upload de imagem */}
       <div className="space-y-4">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-[#9b6b35]">
-          Imagem da rifa
+          Imagens da rifa
         </h3>
-        <ImageUpload
-          label="Imagem principal"
-          currentUrl={form.imagemUrl || null}
-          assetType="rifa_main"
-          rifaId={rifa?.id}
-          onUploaded={(url) => handleChange("imagemUrl", url)}
-        />
-        {form.imagemUrl && (
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">URL da imagem</Label>
-            <Input value={form.imagemUrl} readOnly className="text-xs text-muted-foreground" />
+        <div className="grid gap-6 sm:grid-cols-2">
+          {/* Imagem principal */}
+          <div className="space-y-2">
+            <ImageUpload
+              label="Imagem principal (exibida na página de compra)"
+              currentUrl={form.imagemUrl || null}
+              assetType="rifa_main"
+              rifaId={rifa?.id}
+              onUploaded={(url) => handleChange("imagemUrl", url)}
+            />
+            <p className="text-xs text-muted-foreground">Proporção ideal: <strong>9:16</strong> (ex: 1080×1920 px)</p>
           </div>
-        )}
+          {/* Thumbnail Open Graph */}
+          <div className="space-y-2">
+            <ImageUpload
+              label="Thumbnail (preview ao compartilhar link)"
+              currentUrl={form.thumbnailUrl || null}
+              assetType="rifa_main"
+              rifaId={rifa?.id}
+              onUploaded={(url) => handleChange("thumbnailUrl", url)}
+            />
+            <p className="text-xs text-muted-foreground">Aparece no WhatsApp/Instagram ao compartilhar o link. Proporção ideal: <strong>9:16</strong> (ex: 1080×1920 px)</p>
+            {form.thumbnailUrl && (
+              <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2">
+                <span className="text-xs font-medium text-green-700">✓ Thumbnail configurada — aparecerá ao compartilhar o link</span>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
-
       <Separator className="bg-[#ecdcc5]" />
-
       {/* Status */}
       <div className="flex items-center gap-3 rounded-xl border border-[#ecdcc5] bg-white px-4 py-3">
         <Switch

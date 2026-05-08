@@ -130,11 +130,8 @@ function RifaCard({ rifa }: { rifa: RifaListItem }) {
   return (
     <Link href={`/rifa/${rifa.slug}`}>
       <Card className="group cursor-pointer overflow-hidden border-[#e6d8c1] bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
-        {/* Imagem 9:16 com maxHeight para não ficar gigante no desktop */}
-        <div
-          className="relative w-full overflow-hidden bg-[#f7eee0]"
-          style={{ aspectRatio: "9/16", maxHeight: "340px" }}
-        >
+        {/* Imagem: quadrada no mobile, 3:4 no desktop */}
+        <div className="relative w-full overflow-hidden bg-[#f7eee0] aspect-square sm:aspect-[3/4]">
           {thumb ? (
             <img
               src={thumb}
@@ -340,11 +337,8 @@ function RifaPage({ slug }: { slug: string }) {
           {/* ── Coluna esquerda: info da rifa ── */}
           <div className="space-y-6">
 
-            {/* Imagem principal — proporção 9:16, limitada em altura */}
-            <div
-              className="w-full overflow-hidden rounded-2xl bg-[#f7eee0] shadow-sm"
-              style={{ aspectRatio: "9/16", maxHeight: "480px" }}
-            >
+            {/* Imagem principal — 16:9 no mobile, 9:16 no desktop (limitado) */}
+            <div className="w-full overflow-hidden rounded-2xl bg-[#f7eee0] shadow-sm aspect-video lg:aspect-[9/16] lg:max-h-[520px]">
               {rifa.imagemUrl ? (
                 <img
                   src={rifa.imagemUrl}
