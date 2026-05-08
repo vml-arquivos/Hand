@@ -157,7 +157,19 @@ async function gerarFlyerCanvas(params: {
       ctx.quadraticCurveTo(40, y, 40 + r, y);
       ctx.closePath();
       ctx.clip();
-      ctx.drawImage(img, 40, y, W - 80, imgH);
+
+      const boxX = 40;
+      const boxY = y;
+      const boxW = W - 80;
+      const boxH = imgH;
+      ctx.fillStyle = "#1f160d";
+      ctx.fillRect(boxX, boxY, boxW, boxH);
+      const scale = Math.min(boxW / img.width, boxH / img.height);
+      const drawW = img.width * scale;
+      const drawH = img.height * scale;
+      const drawX = boxX + (boxW - drawW) / 2;
+      const drawY = boxY + (boxH - drawH) / 2;
+      ctx.drawImage(img, drawX, drawY, drawW, drawH);
       ctx.restore();
       y += imgH + 20;
     } catch {
@@ -368,7 +380,7 @@ export function AdminFlyer({ rifa }: { rifa: FlyerRifa }) {
               src={rifa.imagemUrl}
               alt={rifa.nome}
               crossOrigin="anonymous"
-              style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+              style={{ width: "100%", height: "100%", objectFit: "contain", display: "block", background: "#1f160d" }}
               onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
             />
           </div>
