@@ -5,21 +5,30 @@ import { nanoid } from "nanoid";
 import path from "path";
 
 export async function setupVite(app: Express, server: Server) {
-  // Imports dinâmicos: vite e vite.config só são carregados em desenvolvimento,
-  // evitando ERR_MODULE_NOT_FOUND em produção onde vite não está instalado.
+  // Imports dinâmicos: vite e seus plugins só carregam em desenvolvimento.
+  // Não importamos vite.config para evitar que devDependencies (jsxLocPlugin,
+  // vite-plugin-manus-runtime, @tailwindcss/vite) sejam referenciadas em produção.
   const { createServer: createViteServer } = await import("vite");
-  const { default: viteConfig } = await import("../../vite.config");
-
-  const serverOptions = {
-    middlewareMode: true,
-    hmr: { server },
-    allowedHosts: true as const,
-  };
+  const { default: react } = await import("@vitejs/plugin-react");
+  const { default: tailwindcss } = await import("@tailwindcss/vite");
 
   const vite = await createViteServer({
-    ...viteConfig,
     configFile: false,
-    server: serverOptions,
+    plugins: [react(), tailwindcss()],
+    resolve: {
+      alias: {
+        "@": path.resolve(process.cwd(), "client", "src"),
+        "@shared": path.resolve(process.cwd(), "shared"),
+        "@assets": path.resolve(process.cwd(), "attached_assets"),
+      },
+    },
+    root: path.resolve(process.cwd(), "client"),
+    publicDir: path.resolve(process.cwd(), "client", "public"),
+    server: {
+      middlewareMode: true,
+      hmr: { server },
+      allowedHosts: true as const,
+    },
     appType: "custom",
   });
 
@@ -29,8 +38,7 @@ export async function setupVite(app: Express, server: Server) {
 
     try {
       const clientTemplate = path.resolve(
-        import.meta.dirname,
-        "../..",
+        process.cwd(),
         "client",
         "index.html"
       );
@@ -53,7 +61,7 @@ export async function setupVite(app: Express, server: Server) {
 export function serveStatic(app: Express) {
   const distPath =
     process.env.NODE_ENV === "development"
-      ? path.resolve(import.meta.dirname, "../..", "dist", "public")
+      ? path.resolve(process.cwd(), "dist", "public")
       : path.resolve(import.meta.dirname, "public");
 
   if (!fs.existsSync(distPath)) {
