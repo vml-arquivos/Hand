@@ -540,10 +540,15 @@ function PremioForm({
 
 // ─── Aba de Prêmios ───────────────────────────────────────────────────────────
 
-function PremiosTab({ rifas }: { rifas: RifaRow[] }) {
-  const [selectedRifaId, setSelectedRifaId] = useState<number | null>(
-    rifas.length > 0 ? rifas[0].id : null,
-  );
+function PremiosTab({
+  rifas,
+  lockedRifaId,
+}: {
+  rifas: RifaRow[];
+  lockedRifaId?: number;
+}) {
+  const initialRifaId = lockedRifaId ?? (rifas.length > 0 ? rifas[0].id : null);
+  const [selectedRifaId, setSelectedRifaId] = useState<number | null>(initialRifaId);
   const [showForm, setShowForm] = useState(false);
   const [editingPremio, setEditingPremio] = useState<PremioRow | null>(null);
   const utils = trpc.useUtils();
@@ -561,6 +566,16 @@ function PremiosTab({ rifas }: { rifas: RifaRow[] }) {
     onError: (err) => toast.error("Erro: " + err.message),
   });
 
+  useEffect(() => {
+    if (lockedRifaId) {
+      setSelectedRifaId(lockedRifaId);
+      setShowForm(false);
+      setEditingPremio(null);
+    }
+  }, [lockedRifaId]);
+
+  const selectedRifa = rifas.find((r) => r.id === selectedRifaId) ?? null;
+
   function handleSaved() {
     setShowForm(false);
     setEditingPremio(null);
@@ -577,24 +592,42 @@ function PremiosTab({ rifas }: { rifas: RifaRow[] }) {
         </Card>
       ) : (
         <>
-          <div className="space-y-2">
-            <Label>Selecionar rifa</Label>
-            <select
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              value={selectedRifaId ?? ""}
-              onChange={(e) => {
-                setSelectedRifaId(Number(e.target.value));
-                setShowForm(false);
-                setEditingPremio(null);
-              }}
-            >
-              {rifas.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.nome}
-                </option>
-              ))}
-            </select>
-          </div>
+          {lockedRifaId ? (
+            <div className="rounded-2xl border border-[#eadbc2] bg-[#fcfaf6] p-4">
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#9b6b35]">Espaço da premiação</p>
+                  <h4 className="mt-1 text-lg font-semibold text-[#2b2116]">{selectedRifa?.nome ?? "Rifa selecionada"}</h4>
+                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                    Cadastre aqui os itens da premiação com título, descrição e imagens.
+                    Essas imagens serão exibidas abaixo da imagem principal na página pública.
+                  </p>
+                </div>
+                <Badge className="border-[#e7c782] bg-[#f8ebd2] text-[#7f5525] hover:bg-[#f8ebd2]">
+                  <Gift className="mr-1 h-3 w-3" /> Galeria do prêmio
+                </Badge>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Label>Selecionar rifa</Label>
+              <select
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                value={selectedRifaId ?? ""}
+                onChange={(e) => {
+                  setSelectedRifaId(Number(e.target.value));
+                  setShowForm(false);
+                  setEditingPremio(null);
+                }}
+              >
+                {rifas.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {selectedRifaId && (
             <>
@@ -640,7 +673,7 @@ function PremiosTab({ rifas }: { rifas: RifaRow[] }) {
                         <img
                           src={p.imagemUrl}
                           alt={p.titulo}
-                          className="h-16 w-16 rounded-xl object-cover"
+                          className="h-20 w-28 rounded-xl bg-[#fffaf2] object-contain p-1"
                           onError={(e) => {
                             (e.target as HTMLImageElement).style.display = "none";
                           }}
@@ -828,14 +861,29 @@ export default function AdminDashboard() {
                 <CardHeader>
                   <CardTitle>Editar Rifa — {editingRifa.nome}</CardTitle>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="space-y-6">
                   <RifaForm rifa={editingRifa} onSaved={handleRifaSaved} />
+
+                  <Separator />
+
+                  <section className="space-y-4">
+                    <div>
+                      <h3 className="text-xl font-semibold text-[#2b2116]">Espaço para a premiação</h3>
+                      <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                        Aqui você cadastra as imagens e descrições do prêmio. Elas aparecerão abaixo da imagem principal da rifa,
+                        em formato de galeria/carrossel na página pública.
+                      </p>
+                    </div>
+
+                    <PremiosTab rifas={rifas} lockedRifaId={editingRifa.id} />
+                  </section>
+
                   <Button
                     variant="outline"
-                    className="mt-4 w-full"
+                    className="w-full"
                     onClick={() => setEditingRifa(null)}
                   >
-                    Cancelar
+                    Voltar para a lista de rifas
                   </Button>
                 </CardContent>
               </Card>
