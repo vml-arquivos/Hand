@@ -711,8 +711,23 @@ export default function AdminDashboard() {
     { enabled: !!selectedRifaId },
   );
 
+  // Rastreia pedidos recém-confirmados para exibir botão WhatsApp
+  const [pedidosConfirmados, setPedidosConfirmados] = useState<Record<number, { telefone: string; codigo: string; numeros: number[] }>>({});
+
   const confirmarPedido = trpc.admin.confirmarPedido.useMutation({
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
+      // Encontra o pedido confirmado para montar o link WhatsApp
+      const item = [...(pedidos ?? [])].find(p => p.pedido.id === variables.pedidoId);
+      if (item) {
+        setPedidosConfirmados(prev => ({
+          ...prev,
+          [variables.pedidoId]: {
+            telefone: item.comprador.telefone,
+            codigo: item.pedido.codigo,
+            numeros: data?.numeros ?? [],
+          },
+        }));
+      }
       toast.success("Pedido confirmado!");
       utils.admin.dashboard.invalidate();
     },
@@ -927,6 +942,28 @@ export default function AdminDashboard() {
                             </Button>
                           </div>
                         )}
+                        {/* Botão WhatsApp após confirmação */}
+                        {pedido.status === "confirmado" && pedidosConfirmados[pedido.id] && (() => {
+                          const info = pedidosConfirmados[pedido.id];
+                          const nums = bilhetes?.map((b: any) => String(b.numero).padStart(4, "0")).join(", ") || info.numeros.map(n => String(n).padStart(4, "0")).join(", ");
+                          const link = `${window.location.origin}/comprovante/${info.codigo}`;
+                          const msg = encodeURIComponent(
+                            `✅ *Pagamento confirmado!*\n\nOlá, ${comprador.nome.split(" ")[0]}! Seu pagamento foi confirmado.\n\n🎫 *Seus bilhetes:* ${nums}\n\n🔗 Acesse seu comprovante:\n${link}\n\nObrigado por participar! 💚`
+                          );
+                          const tel = info.telefone.replace(/\D/g, "");
+                          const waUrl = `https://wa.me/55${tel}?text=${msg}`;
+                          return (
+                            <a
+                              href={waUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 rounded-md bg-green-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-600"
+                            >
+                              <MessageCircle className="h-3.5 w-3.5" />
+                              Enviar WhatsApp
+                            </a>
+                          );
+                        })()}
                       </div>
                     </CardContent>
                   </Card>

@@ -4,6 +4,7 @@ import AdminDashboard from "@/pages/AdminDashboard";
 import AdminLogin from "@/pages/AdminLogin";
 import Comprovante from "@/pages/Comprovante";
 import Home from "@/pages/Home";
+import MeusBilhetes from "@/pages/MeusBilhetes";
 import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -15,6 +16,7 @@ function Router() {
       <Route path="/" component={Home} />
       <Route path="/rifa/:slug" component={Home} />
       <Route path="/comprovante/:codigo" component={Comprovante} />
+      <Route path="/meus-bilhetes" component={MeusBilhetes} />
       <Route path="/admin/login" component={AdminLogin} />
       <Route path="/admin" component={AdminDashboard} />
       <Route path="/404" component={NotFound} />

@@ -320,6 +320,51 @@ export async function cancelarPedido(pedidoId: number, adminUserId?: number) {
   return { success: true };
 }
 
+/**
+ * Busca todos os pedidos de um comprador pelo telefone (normalizado).
+ * Remove todos os caracteres não numéricos antes de comparar.
+ */
+export async function getPedidosByTelefone(telefone: string) {
+  const db = requireDbSync(await getDb());
+  const digits = telefone.replace(/\D/g, "");
+  if (digits.length < 8) return [];
+
+  // Busca todos os compradores e filtra por telefone (match de sufixo)
+  const compradorRows = await db.select().from(compradores);
+  const matched = compradorRows.filter(c => {
+    const d = c.telefone.replace(/\D/g, "");
+    return d.endsWith(digits) || digits.endsWith(d);
+  });
+  if (!matched.length) return [];
+
+  const ids = matched.map(c => c.id);
+  const rows = await db
+    .select({ pedido: pedidos, comprador: compradores, rifa: rifas })
+    .from(pedidos)
+    .innerJoin(compradores, eq(pedidos.compradorId, compradores.id))
+    .innerJoin(rifas, eq(pedidos.rifaId, rifas.id))
+    .where(inArray(pedidos.compradorId, ids))
+    .orderBy(desc(pedidos.createdAt));
+
+  const pedidoIds = rows.map(r => r.pedido.id);
+  const tickets = pedidoIds.length
+    ? await db.select().from(bilhetes).where(inArray(bilhetes.pedidoId, pedidoIds)).orderBy(asc(bilhetes.numero))
+    : [];
+
+  return rows.map(row => ({
+    ...row,
+    pedido: {
+      ...row.pedido,
+      valorTotal: parseFloat(String(row.pedido.valorTotal)).toFixed(2),
+    },
+    rifa: {
+      ...row.rifa,
+      precoBilhete: parseFloat(String(row.rifa.precoBilhete)).toFixed(2),
+    },
+    bilhetes: tickets.filter(t => t.pedidoId === row.pedido.id),
+  }));
+}
+
 export async function createRifa(input: InsertRifa) {
   const db = requireDbSync(await getDb());
   const [created] = await db.insert(rifas).values({ ...input, updatedAt: new Date() }).returning();

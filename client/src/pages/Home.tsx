@@ -29,6 +29,7 @@ import { useLocation, useRoute } from "wouter";
 
 const moeda = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const DONOR_KEY = "rifa_doador_v1";
+const PEDIDO_KEY = "rifa_ultimo_pedido_v1";
 
 function formatarData(data?: string | null) {
   if (!data) return "A definir";
@@ -46,6 +47,7 @@ export default function Home() {
   const [quantidade, setQuantidade] = useState(1);
   const [form, setForm] = useState({ nome: "", telefone: "", email: "" });
   const [qrPreview, setQrPreview] = useState("");
+  const [ultimoPedido, setUltimoPedido] = useState<{ codigo: string; nome: string } | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
 
   const total = rifa ? Number(rifa.precoBilhete) * quantidade : 0;
@@ -69,6 +71,11 @@ export default function Home() {
       if (saved) {
         const donor = JSON.parse(saved) as { nome?: string; telefone?: string };
         setForm((p) => ({ ...p, nome: donor.nome ?? "", telefone: donor.telefone ?? "" }));
+      }
+      const pedidoSalvo = localStorage.getItem(PEDIDO_KEY);
+      if (pedidoSalvo) {
+        const p = JSON.parse(pedidoSalvo) as { codigo: string; nome: string };
+        setUltimoPedido(p);
       }
     } catch {
       localStorage.removeItem(DONOR_KEY);
@@ -112,6 +119,9 @@ export default function Home() {
         email: form.email.trim() || undefined,
       });
       localStorage.setItem(DONOR_KEY, JSON.stringify({ nome: form.nome, telefone: form.telefone }));
+      if (pedido?.pedido.codigo) {
+        localStorage.setItem(PEDIDO_KEY, JSON.stringify({ codigo: pedido.pedido.codigo, nome: form.nome.trim() }));
+      }
       navigate(`/comprovante/${pedido?.pedido.codigo}`);
     } catch {
       // erro exibido via criarPedido.error
@@ -153,19 +163,53 @@ export default function Home() {
             </span>
             <span className="font-semibold text-[#2e2013]">Rifas Beneficentes</span>
           </div>
-          <a
-            href="/admin"
-            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm text-[#593b1f] transition hover:bg-[#f4dfbc]"
-          >
-            <LockKeyhole className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Admin</span>
-          </a>
+          <div className="flex items-center gap-1">
+            <a
+              href="/meus-bilhetes"
+              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm text-[#593b1f] transition hover:bg-[#f4dfbc]"
+            >
+              <Ticket className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Meus Bilhetes</span>
+            </a>
+            <a
+              href="/admin"
+              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm text-[#593b1f] transition hover:bg-[#f4dfbc]"
+            >
+              <LockKeyhole className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Admin</span>
+            </a>
+          </div>
         </div>
       </nav>
-
-      {/* ── Conteúdo principal ──────────────────────────────────────────────── */}
-      <div className="mx-auto max-w-6xl px-4 py-6 pb-28 md:pb-10 md:py-10">
-        <div className="grid gap-8 lg:grid-cols-[1fr_400px] xl:grid-cols-[1fr_440px]">
+      {/* ── Banner de pedido pendente ───────────────────────────────────── */}
+      {ultimoPedido && (
+        <div className="border-b border-amber-200 bg-amber-50 px-4 py-2.5">
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-amber-900">
+              Olá, <strong>{ultimoPedido.nome.split(" ")[0]}</strong>! Você tem um pedido recente.
+            </p>
+            <div className="flex items-center gap-3">
+              <a
+                href={`/comprovante/${ultimoPedido.codigo}`}
+                className="text-sm font-semibold text-amber-800 underline hover:text-amber-900"
+              >
+                Ver comprovante
+              </a>
+              <button
+                onClick={() => {
+                  localStorage.removeItem(PEDIDO_KEY);
+                  setUltimoPedido(null);
+                }}
+                className="text-xs text-amber-600 hover:text-amber-800"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ── Conteúdo principal ────────────────────────────────────────────────── */}
+      <div className="mx-auto max-w-6xl px-4 py-6 pb-28 md:pb-10 md:py-10">        <div className="grid gap-8 lg:grid-cols-[1fr_400px] xl:grid-cols-[1fr_440px]">
 
           {/* ── Coluna esquerda ─────────────────────────────────────────────── */}
           <div className="space-y-6">

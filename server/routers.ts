@@ -128,6 +128,14 @@ export const appRouter = router({
       if (!pedido) throw new TRPCError({ code: "NOT_FOUND", message: "Pedido não encontrado." });
       return pedido;
     }),
+
+    // Busca pedidos pelo telefone do comprador (sem login)
+    meusBilhetes: publicProcedure
+      .input(z.object({ telefone: z.string().min(8) }))
+      .query(async ({ input }) => {
+        const resultados = await db.getPedidosByTelefone(input.telefone);
+        return resultados;
+      }),
   }),
 
   // --- ADMIN PROTECTED ROUTES ---
