@@ -111,6 +111,12 @@ function ImageUpload({
   const [uploading, setUploading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const uploadMutation = trpc.admin.uploadImagem.useMutation();
+  const imageGuidance =
+    assetType === "rifa_main"
+      ? "Use arte horizontal 16:9 — ideal 1600x900px ou 1920x1080px. A página pública exibirá a imagem inteira, sem corte."
+      : assetType === "premio"
+        ? "Use fotos horizontais 16:9 — ideal 1600x900px ou 1920x1080px. Elas aparecerão no carrossel do prêmio."
+        : "Use imagem legível em boa resolução.";
 
   // Atualiza preview quando a URL externa muda
   useEffect(() => {
@@ -153,9 +159,12 @@ function ImageUpload({
 
   return (
     <div className="space-y-2">
-      <Label>{label}</Label>
+      <div className="space-y-1">
+        <Label>{label}</Label>
+        <p className="text-xs leading-5 text-muted-foreground">{imageGuidance}</p>
+      </div>
       <div
-        className="relative flex min-h-[140px] cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-[#d5b078] bg-[#fdf8f0] transition hover:border-[#a06a31] hover:bg-[#faf0e0]"
+        className="relative flex aspect-[16/9] min-h-[160px] cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-[#d5b078] bg-[#fdf8f0] transition hover:border-[#a06a31] hover:bg-[#faf0e0]"
         onClick={() => inputRef.current?.click()}
       >
         {uploading ? (
@@ -165,7 +174,7 @@ function ImageUpload({
             <img
               src={preview}
               alt="Preview"
-              className="max-h-[120px] max-w-full rounded-lg object-contain"
+              className="h-full max-h-[240px] w-full rounded-lg object-contain p-2"
               onError={() => setPreview(null)}
             />
             <p className="text-xs text-muted-foreground">Clique para trocar</p>
