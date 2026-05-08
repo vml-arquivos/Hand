@@ -41,7 +41,7 @@ async function startServer() {
 
   const app = express();
   const server = createServer(app);
-  
+
   app.use(cookieParser());
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
@@ -58,49 +58,98 @@ async function startServer() {
       createContext,
     })
   );
-  // ── Open Graph dinâmico por slug ──────────────────────────────────────
-  // Bots de preview (WhatsApp, Telegram, Google) recebem HTML com meta tags OG.
-  // Usuários normais passam para o SPA.
+
+  // ── Open Graph dinâmico por slug ──────────────────────────────────────────────
+  // TODOS os acessos a /rifa/:slug recebem HTML com meta tags OG injetadas.
+  // Isso garante que WhatsApp, Telegram e outros crawlers sempre vejam a imagem.
+  // Para usuários normais: o SPA é carregado normalmente via o index.html com
+  // as meta tags já presentes no <head>.
   app.get("/rifa/:slug", async (req, res, next) => {
-    const ua = req.headers["user-agent"] ?? "";
-    const isBot = /facebookexternalhit|twitterbot|whatsapp|telegram|linkedinbot|slackbot|discordbot|googlebot|bingbot|applebot|curl|wget|python|axios|node-fetch/i.test(ua);
-    if (!isBot) return next();
     try {
       const { getPublicRifa } = await import("../db");
       const rifa = await getPublicRifa(req.params.slug);
       if (!rifa) return next();
-      const siteUrl = (process.env.PUBLIC_URL ?? `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
-      const thumb = rifa.thumbnailUrl
-        ? (rifa.thumbnailUrl.startsWith("http") ? rifa.thumbnailUrl : `${siteUrl}${rifa.thumbnailUrl}`)
-        : (rifa.imagemUrl
-          ? (rifa.imagemUrl.startsWith("http") ? rifa.imagemUrl : `${siteUrl}${rifa.imagemUrl}`)
-          : `${siteUrl}/og-default.png`);
-      const descricao = (rifa.descricao ?? "").slice(0, 200).replace(/"/g, "&quot;");
+
+      // Determina a URL base do site (usa PUBLIC_URL se definido, senão detecta do request)
+      // Força HTTPS se PUBLIC_URL não estiver definido mas o request vier de proxy HTTPS
+      const proto = req.headers["x-forwarded-proto"] ?? req.protocol;
+      const siteUrl = (process.env.PUBLIC_URL ?? `${proto}://${req.get("host")}`).replace(/\/$/, "");
+
+      // Converte URL relativa para absoluta (WhatsApp exige URL absoluta HTTPS)
+      const toAbsolute = (url: string | null | undefined): string => {
+        if (!url) return `${siteUrl}/og-default.png`;
+        if (url.startsWith("http://") || url.startsWith("https://")) return url;
+        return `${siteUrl}${url.startsWith("/") ? url : "/" + url}`;
+      };
+
+      // Usa thumbnailUrl como imagem OG, com fallback para imagemUrl
+      const thumb = toAbsolute(rifa.thumbnailUrl || rifa.imagemUrl);
+      const descricao = (rifa.descricao ?? "").slice(0, 200)
+        .replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      const titulo = (rifa.nome ?? "")
+        .replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
       const preco = parseFloat(String(rifa.precoBilhete)).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-      const html = `<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8" />
-  <title>${rifa.nome} — Rifas Beneficentes</title>
-  <meta name="description" content="${descricao}" />
+      const rifaUrl = `${siteUrl}/rifa/${rifa.slug}`;
+
+      // Meta tags OG completas — compatíveis com WhatsApp, Telegram, Facebook, Twitter
+      const ogMeta = `
   <meta property="og:type" content="website" />
-  <meta property="og:url" content="${siteUrl}/rifa/${rifa.slug}" />
-  <meta property="og:title" content="${rifa.nome}" />
+  <meta property="og:url" content="${rifaUrl}" />
+  <meta property="og:title" content="${titulo}" />
   <meta property="og:description" content="Bilhete por ${preco}. ${descricao}" />
   <meta property="og:image" content="${thumb}" />
+  <meta property="og:image:secure_url" content="${thumb}" />
   <meta property="og:image:width" content="1080" />
-  <meta property="og:image:height" content="1920" />
+  <meta property="og:image:height" content="1080" />
+  <meta property="og:image:alt" content="${titulo}" />
   <meta property="og:locale" content="pt_BR" />
   <meta property="og:site_name" content="Rifas Beneficentes" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="${rifa.nome}" />
+  <meta name="twitter:title" content="${titulo}" />
   <meta name="twitter:description" content="Bilhete por ${preco}. ${descricao}" />
-  <meta name="twitter:image" content="${thumb}" />
-  <meta http-equiv="refresh" content="0; url=${siteUrl}/rifa/${rifa.slug}" />
+  <meta name="twitter:image" content="${thumb}" />`;
+
+      // Em produção: injeta as meta tags no index.html do SPA
+      // Assim usuários normais carregam o SPA normalmente E os bots veem as meta tags
+      let html: string | null = null;
+      if (process.env.NODE_ENV === "production") {
+        try {
+          const { readFileSync } = await import("fs");
+          const { resolve: resolvePath } = await import("path");
+          const spaPath = resolvePath(process.cwd(), "dist", "public", "index.html");
+          let spaHtml = readFileSync(spaPath, "utf-8");
+          // Remove title padrão e injeta o título e meta tags OG da rifa
+          spaHtml = spaHtml.replace(
+            /<title>[^<]*<\/title>/,
+            `<title>${titulo} — Rifas Beneficentes</title>\n  <meta name="description" content="${descricao}" />${ogMeta}`
+          );
+          html = spaHtml;
+        } catch {
+          // fallback: HTML mínimo com OG
+        }
+      }
+
+      // Fallback: HTML mínimo com OG + redirect (usado em dev ou se SPA não disponível)
+      if (!html) {
+        html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>${titulo} — Rifas Beneficentes</title>
+  <meta name="description" content="${descricao}" />
+  ${ogMeta}
+  <meta http-equiv="refresh" content="0; url=${rifaUrl}" />
 </head>
-<body><p>Redirecionando para <a href="${siteUrl}/rifa/${rifa.slug}">${rifa.nome}</a>...</p></body>
+<body>
+  <p>Participar da rifa: <a href="${rifaUrl}">${titulo}</a></p>
+  <img src="${thumb}" alt="${titulo}" style="max-width:400px" />
+</body>
 </html>`;
-      res.status(200).set({ "Content-Type": "text/html; charset=utf-8" }).end(html);
+      }
+
+      res.status(200)
+        .set({ "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache, no-store" })
+        .end(html);
     } catch {
       next();
     }
