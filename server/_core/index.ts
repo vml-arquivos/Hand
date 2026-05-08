@@ -9,12 +9,12 @@ import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
-import { resolve, dirname } from "path";
-import { fileURLToPath } from "url";
+import { resolve } from "path";
 import { bootstrapAdmin } from "../db";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const UPLOADS_DIR = resolve(__dirname, "..", "..", "uploads");
+const UPLOADS_DIR = process.env.UPLOAD_DIR
+  ? resolve(process.env.UPLOAD_DIR)
+  : resolve(process.cwd(), "uploads");
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
