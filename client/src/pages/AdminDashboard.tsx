@@ -32,6 +32,11 @@ import {
   Trophy,
   UploadCloud,
   Users,
+  UserPlus,
+  UserX,
+  UserCheck,
+  Eye,
+  EyeOff,
   XCircle,
   Zap,
 } from "lucide-react";
@@ -705,9 +710,19 @@ export default function AdminDashboard() {
   const logout = trpc.auth.logout.useMutation({
     onSuccess: () => setLocation("/admin/login"),
   });
-
+  const me = trpc.auth.me.useQuery();
+  const adminRole = me.data?.role ?? "admin";
+  const adminName = me.data?.name ?? "";
   const [editingRifa, setEditingRifa] = useState<RifaRow | null>(null);
   const [selectedRifaId, setSelectedRifaId] = useState<number | null>(null);
+
+  // Auto-seleciona a primeira rifa quando os dados carregam
+  useEffect(() => {
+    const rifas = dashboard.data?.rifas;
+    if (rifas && rifas.length > 0 && !selectedRifaId) {
+      setSelectedRifaId(rifas[0].id);
+    }
+  }, [dashboard.data?.rifas, selectedRifaId]);
   const [editingPremio, setEditingPremio] = useState<PremioRow | null | undefined>(undefined);
   const [showPremioForm, setShowPremioForm] = useState(false);
 
@@ -861,6 +876,12 @@ export default function AdminDashboard() {
               <ListOrdered className="mr-1.5 h-4 w-4" />
               Bilhetes
             </TabsTrigger>
+            {adminRole === "super_admin" && (
+              <TabsTrigger value="usuarios" className="flex-1 text-xs sm:text-sm">
+                <Users className="mr-1.5 h-4 w-4" />
+                Usuários
+              </TabsTrigger>
+            )}
           </TabsList>
 
           {/* ── Tab: Pedidos ──────────────────────────────────────────────── */}
@@ -1209,6 +1230,11 @@ export default function AdminDashboard() {
           <TabsContent value="bilhetes">
             <BilhetesTab rifas={rifas ?? []} />
           </TabsContent>
+          {adminRole === "super_admin" && (
+            <TabsContent value="usuarios">
+              <UsuariosTab />
+            </TabsContent>
+          )}
         </Tabs>
       </div>
     </div>
@@ -1416,6 +1442,204 @@ function BilhetesTab({ rifas }: { rifas: RifaItem[] }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Componente UsuariosTab ────────────────────────────────────────────────
+function UsuariosTab() {
+  const utils = trpc.useUtils();
+  const { data: usuarios, isLoading } = trpc.admin.listUsuarios.useQuery();
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ name: "", email: "", password: "", role: "admin" as "admin" | "operador" });
+  const [showPassword, setShowPassword] = useState(false);
+
+  const criarUsuario = trpc.admin.criarUsuario.useMutation({
+    onSuccess: () => {
+      toast.success("Usuário criado com sucesso!");
+      setShowForm(false);
+      setForm({ name: "", email: "", password: "", role: "admin" });
+      utils.admin.listUsuarios.invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const toggleUsuario = trpc.admin.toggleUsuario.useMutation({
+    onSuccess: (_, vars) => {
+      toast.success(vars.active ? "Usuário ativado." : "Usuário desativado.");
+      utils.admin.listUsuarios.invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const roleLabel: Record<string, string> = {
+    super_admin: "Super Admin",
+    admin: "Administrador",
+    operador: "Operador",
+  };
+
+  const roleBadgeColor: Record<string, string> = {
+    super_admin: "bg-purple-100 text-purple-800",
+    admin: "bg-blue-100 text-blue-800",
+    operador: "bg-gray-100 text-gray-700",
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-bold text-[#1a0f06]">Gestão de Usuários</h3>
+          <p className="text-sm text-[#9b6b35]">Gerencie quem pode acessar o painel admin</p>
+        </div>
+        <Button
+          onClick={() => setShowForm(!showForm)}
+          className="bg-[#2b2116] text-white hover:bg-[#3d2e1e]"
+          size="sm"
+        >
+          <UserPlus className="mr-1.5 h-4 w-4" />
+          Novo usuário
+        </Button>
+      </div>
+
+      {/* Formulário de criação */}
+      {showForm && (
+        <div className="rounded-2xl border border-[#ecdcc5] bg-white p-5 shadow-sm">
+          <h4 className="mb-4 font-semibold text-[#1a0f06]">Criar novo usuário</h4>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label>Nome completo *</Label>
+              <Input
+                value={form.name}
+                onChange={(e) => setForm(p => ({ ...p, name: e.target.value }))}
+                placeholder="Ex: João Silva"
+                className="h-11"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>E-mail *</Label>
+              <Input
+                type="email"
+                value={form.email}
+                onChange={(e) => setForm(p => ({ ...p, email: e.target.value }))}
+                placeholder="joao@email.com"
+                className="h-11"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Senha *</Label>
+              <div className="relative">
+                <Input
+                  type={showPassword ? "text" : "password"}
+                  value={form.password}
+                  onChange={(e) => setForm(p => ({ ...p, password: e.target.value }))}
+                  placeholder="Mínimo 6 caracteres"
+                  className="h-11 pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9b6b35]"
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Nível de acesso *</Label>
+              <select
+                value={form.role}
+                onChange={(e) => setForm(p => ({ ...p, role: e.target.value as "admin" | "operador" }))}
+                className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="admin">Administrador (gerencia rifas próprias)</option>
+                <option value="operador">Operador (confirma pedidos apenas)</option>
+              </select>
+            </div>
+          </div>
+          <div className="mt-4 flex gap-3">
+            <Button
+              onClick={() => criarUsuario.mutate(form)}
+              disabled={criarUsuario.isPending || !form.name || !form.email || !form.password}
+              className="flex-1 bg-[#2b2116] text-white hover:bg-[#3d2e1e]"
+            >
+              {criarUsuario.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Criar usuário
+            </Button>
+            <Button variant="outline" onClick={() => setShowForm(false)} className="flex-1">
+              Cancelar
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Lista de usuários */}
+      {isLoading ? (
+        <div className="flex justify-center py-8">
+          <Loader2 className="h-6 w-6 animate-spin text-[#a06a31]" />
+        </div>
+      ) : !usuarios?.length ? (
+        <div className="rounded-2xl border border-dashed border-[#d5b078] bg-white py-12 text-center">
+          <Users className="mx-auto mb-3 h-10 w-10 text-[#d5b078]" />
+          <p className="text-[#9b6b35]">Nenhum usuário cadastrado</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {usuarios.map((u) => (
+            <div
+              key={u.id}
+              className={`flex items-center justify-between rounded-2xl border bg-white p-4 shadow-sm transition ${
+                u.active ? "border-[#ecdcc5]" : "border-red-100 opacity-60"
+              }`}
+            >
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-semibold text-[#1a0f06]">{u.name}</span>
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${roleBadgeColor[u.role] ?? "bg-gray-100 text-gray-700"}`}>
+                    {roleLabel[u.role] ?? u.role}
+                  </span>
+                  {!u.active && (
+                    <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+                      Inativo
+                    </span>
+                  )}
+                </div>
+                <p className="mt-0.5 truncate text-sm text-[#9b6b35]">{u.email}</p>
+                <p className="text-xs text-[#c4a06a]">
+                  Criado em {new Date(u.createdAt).toLocaleDateString("pt-BR")}
+                </p>
+              </div>
+              {u.role !== "super_admin" && (
+                <div className="ml-3 flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => toggleUsuario.mutate({ id: u.id, active: !u.active })}
+                    disabled={toggleUsuario.isPending}
+                    className={u.active ? "border-red-200 text-red-600 hover:bg-red-50" : "border-green-200 text-green-700 hover:bg-green-50"}
+                  >
+                    {u.active ? (
+                      <><UserX className="mr-1 h-3.5 w-3.5" /> Desativar</>
+                    ) : (
+                      <><UserCheck className="mr-1 h-3.5 w-3.5" /> Ativar</>
+                    )}
+                  </Button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Legenda de permissões */}
+      <div className="rounded-xl border border-[#ecdcc5] bg-[#fdf8f0] p-4 text-sm text-[#7a5a3a]">
+        <p className="mb-2 font-semibold text-[#5b3a1c]">Níveis de acesso:</p>
+        <ul className="space-y-1">
+          <li><span className="font-medium text-purple-700">Super Admin</span> — acesso total: vê todas as rifas, gerencia usuários</li>
+          <li><span className="font-medium text-blue-700">Administrador</span> — gerencia apenas as rifas criadas por ele</li>
+          <li><span className="font-medium text-gray-700">Operador</span> — confirma/cancela pedidos das rifas do seu admin</li>
+        </ul>
+      </div>
     </div>
   );
 }

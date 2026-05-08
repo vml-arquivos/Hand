@@ -165,11 +165,89 @@ export async function getPublicRifa(slug = "rifa-beneficente") {
 export async function listAllRifas() {
   const db = requireDbSync(await getDb());
   const rows = await db.select().from(rifas).orderBy(desc(rifas.createdAt));
-  // Normaliza precoBilhete para sempre ser string numérica com 2 casas
   return rows.map(r => ({
     ...r,
     precoBilhete: parseFloat(String(r.precoBilhete)).toFixed(2),
   }));
+}
+
+/**
+ * Lista rifas filtradas pelo owner (admin logado).
+ * super_admin vê todas as rifas; admin/operador vê apenas as suas.
+ */
+export async function listRifasByOwner(adminId: number, role: string) {
+  const db = requireDbSync(await getDb());
+  const rows = role === "super_admin"
+    ? await db.select().from(rifas).orderBy(desc(rifas.createdAt))
+    : await db.select().from(rifas).where(eq(rifas.ownerAdminId, adminId)).orderBy(desc(rifas.createdAt));
+  return rows.map(r => ({
+    ...r,
+    precoBilhete: parseFloat(String(r.precoBilhete)).toFixed(2),
+  }));
+}
+
+/**
+ * Lista pedidos filtrados pelas rifas do owner.
+ * super_admin vê todos; admin/operador vê apenas os das suas rifas.
+ */
+export async function listPedidosByOwner(adminId: number, role: string) {
+  const db = requireDbSync(await getDb());
+  let rows;
+  if (role === "super_admin") {
+    rows = await db.select({ pedido: pedidos, comprador: compradores, rifa: rifas })
+      .from(pedidos)
+      .innerJoin(compradores, eq(pedidos.compradorId, compradores.id))
+      .innerJoin(rifas, eq(pedidos.rifaId, rifas.id))
+      .orderBy(desc(pedidos.createdAt));
+  } else {
+    rows = await db.select({ pedido: pedidos, comprador: compradores, rifa: rifas })
+      .from(pedidos)
+      .innerJoin(compradores, eq(pedidos.compradorId, compradores.id))
+      .innerJoin(rifas, eq(pedidos.rifaId, rifas.id))
+      .where(eq(rifas.ownerAdminId, adminId))
+      .orderBy(desc(pedidos.createdAt));
+  }
+  const pedidoIds = rows.map(r => r.pedido.id);
+  const tickets = pedidoIds.length
+    ? await db.select().from(bilhetes).where(inArray(bilhetes.pedidoId, pedidoIds)).orderBy(asc(bilhetes.numero))
+    : [];
+  return rows.map(row => ({
+    ...row,
+    pedido: { ...row.pedido, valorTotal: parseFloat(String(row.pedido.valorTotal)).toFixed(2) },
+    rifa: { ...row.rifa, precoBilhete: parseFloat(String(row.rifa.precoBilhete)).toFixed(2) },
+    bilhetes: tickets.filter(t => t.pedidoId === row.pedido.id),
+  }));
+}
+
+/**
+ * Stats filtradas pelo owner.
+ */
+export async function getAdminStatsByOwner(adminId: number, role: string) {
+  const db = requireDbSync(await getDb());
+  // Busca os IDs das rifas do owner
+  const minhasRifas = role === "super_admin"
+    ? await db.select({ id: rifas.id }).from(rifas)
+    : await db.select({ id: rifas.id }).from(rifas).where(eq(rifas.ownerAdminId, adminId));
+  const rifaIds = minhasRifas.map(r => r.id);
+  if (!rifaIds.length) {
+    return {
+      pendente: { status: "pendente" as OrderStatus, quantidade: "0", valor: "0" },
+      confirmado: { status: "confirmado" as OrderStatus, quantidade: "0", valor: "0" },
+      cancelado: { status: "cancelado" as OrderStatus, quantidade: "0", valor: "0" },
+      bilhetesConfirmados: 0,
+    };
+  }
+  const rows = await db.select({ status: pedidos.status, quantidade: sum(pedidos.quantidade), valor: sum(pedidos.valorTotal) })
+    .from(pedidos)
+    .where(inArray(pedidos.rifaId, rifaIds))
+    .groupBy(pedidos.status);
+  const vendidos = await db.select({ total: count() }).from(bilhetes).where(inArray(bilhetes.rifaId, rifaIds));
+  return {
+    pendente: rows.find(r => r.status === "pendente") ?? { status: "pendente" as OrderStatus, quantidade: "0", valor: "0" },
+    confirmado: rows.find(r => r.status === "confirmado") ?? { status: "confirmado" as OrderStatus, quantidade: "0", valor: "0" },
+    cancelado: rows.find(r => r.status === "cancelado") ?? { status: "cancelado" as OrderStatus, quantidade: "0", valor: "0" },
+    bilhetesConfirmados: Number(vendidos[0]?.total ?? 0),
+  };
 }
 
 export async function createPedido(input: { 
@@ -403,10 +481,62 @@ export async function deletePremio(id: number) {
   return { success: true };
 }
 
+// --- GESTÃO DE USUÁRIOS ADMIN ---
+
 /**
- * Lista todos os bilhetes confirmados de uma rifa com dados completos do comprador e pedido.
- * Usado pelo painel admin para controle do sorteio.
+ * Lista todos os usuários admin (apenas super_admin pode chamar).
  */
+export async function listAdminUsers() {
+  const db = requireDbSync(await getDb());
+  const rows = await db.select({
+    id: adminUsers.id,
+    name: adminUsers.name,
+    email: adminUsers.email,
+    role: adminUsers.role,
+    active: adminUsers.active,
+    createdAt: adminUsers.createdAt,
+  }).from(adminUsers).orderBy(asc(adminUsers.createdAt));
+  return rows;
+}
+
+/**
+ * Cria um novo usuário admin.
+ */
+export async function createAdminUser(input: { name: string; email: string; password: string; role?: string }) {
+  const db = requireDbSync(await getDb());
+  const existing = await db.select().from(adminUsers).where(eq(adminUsers.email, input.email)).limit(1);
+  if (existing.length) throw new Error("Já existe um usuário com este e-mail.");
+  const passwordHash = await bcrypt.hash(input.password, 10);
+  const [created] = await db.insert(adminUsers).values({
+    name: input.name.trim(),
+    email: input.email.trim().toLowerCase(),
+    passwordHash,
+    role: (input.role ?? "admin") as string,
+    active: true,
+    updatedAt: new Date(),
+  }).returning();
+  return { id: created.id, name: created.name, email: created.email, role: created.role, active: created.active };
+}
+
+/**
+ * Ativa ou desativa um usuário admin.
+ */
+export async function toggleAdminUser(id: number, active: boolean) {
+  const db = requireDbSync(await getDb());
+  await db.update(adminUsers).set({ active, updatedAt: new Date() }).where(eq(adminUsers.id, id));
+  return { success: true };
+}
+
+/**
+ * Redefine a senha de um usuário admin.
+ */
+export async function resetAdminPassword(id: number, newPassword: string) {
+  const db = requireDbSync(await getDb());
+  const passwordHash = await bcrypt.hash(newPassword, 10);
+  await db.update(adminUsers).set({ passwordHash, updatedAt: new Date() }).where(eq(adminUsers.id, id));
+  return { success: true };
+}
+
 export async function listBilhetesCompleto(rifaId: number) {
   const db = requireDbSync(await getDb());
   const rows = await db

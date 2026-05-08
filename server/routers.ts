@@ -140,11 +140,13 @@ export const appRouter = router({
 
   // --- ADMIN PROTECTED ROUTES ---
   admin: router({
-    dashboard: adminProcedure.query(async () => {
+    dashboard: adminProcedure.query(async ({ ctx }) => {
+      const adminId = ctx.admin.id;
+      const role = ctx.admin.role;
       const [pedidos, stats, rifas] = await Promise.all([
-        db.listPedidos(),
-        db.getAdminStats(),
-        db.listAllRifas()
+        db.listPedidosByOwner(adminId, role),
+        db.getAdminStatsByOwner(adminId, role),
+        db.listRifasByOwner(adminId, role),
       ]);
       return { pedidos, stats, rifas };
     }),
@@ -283,6 +285,14 @@ export const appRouter = router({
       return result;
     }),
 
+    salvarRifaComOwner: adminProcedure
+      .input(z.object({ rifaId: z.number().int().positive() }))
+      .mutation(async ({ input, ctx }) => {
+        // Vincula uma rifa existente ao admin logado (usado ao criar nova rifa)
+        await db.updateRifa({ id: input.rifaId, ownerAdminId: ctx.admin.id } as any);
+        return { success: true };
+      }),
+
     uploadImagem: adminProcedure
       .input(z.object({
         fileName: z.string().min(1),
@@ -314,6 +324,75 @@ export const appRouter = router({
         });
 
         return { url: result.url };
+      }),
+
+    // --- GESTÃO DE USUÁRIOS (apenas super_admin) ---
+    listUsuarios: adminProcedure.query(async ({ ctx }) => {
+      if (ctx.admin.role !== "super_admin") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Apenas o super administrador pode gerenciar usuários." });
+      }
+      return db.listAdminUsers();
+    }),
+
+    criarUsuario: adminProcedure
+      .input(z.object({
+        name: z.string().min(2),
+        email: z.string().email(),
+        password: z.string().min(6),
+        role: z.enum(["admin", "operador"]).default("admin"),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        if (ctx.admin.role !== "super_admin") {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Apenas o super administrador pode criar usuários." });
+        }
+        try {
+          const user = await db.createAdminUser(input);
+          await db.createAuditLog({
+            adminUserId: ctx.admin.id,
+            action: "create_admin_user",
+            entityType: "admin_user",
+            entityId: user.id,
+            details: { email: user.email, role: user.role },
+          });
+          return user;
+        } catch (error) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Erro ao criar usuário." });
+        }
+      }),
+
+    toggleUsuario: adminProcedure
+      .input(z.object({ id: z.number().int().positive(), active: z.boolean() }))
+      .mutation(async ({ input, ctx }) => {
+        if (ctx.admin.role !== "super_admin") {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Apenas o super administrador pode ativar/desativar usuários." });
+        }
+        if (input.id === ctx.admin.id) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Você não pode desativar sua própria conta." });
+        }
+        await db.toggleAdminUser(input.id, input.active);
+        await db.createAuditLog({
+          adminUserId: ctx.admin.id,
+          action: input.active ? "activate_admin_user" : "deactivate_admin_user",
+          entityType: "admin_user",
+          entityId: input.id,
+        });
+        return { success: true };
+      }),
+
+    redefinirSenha: adminProcedure
+      .input(z.object({ id: z.number().int().positive(), newPassword: z.string().min(6) }))
+      .mutation(async ({ input, ctx }) => {
+        if (ctx.admin.role !== "super_admin") {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Apenas o super administrador pode redefinir senhas." });
+        }
+        await db.resetAdminPassword(input.id, input.newPassword);
+        await db.createAuditLog({
+          adminUserId: ctx.admin.id,
+          action: "reset_admin_password",
+          entityType: "admin_user",
+          entityId: input.id,
+        });
+        return { success: true };
       }),
   }),
 });

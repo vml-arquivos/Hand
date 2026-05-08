@@ -30,6 +30,7 @@ export const adminUsers = pgTable("admin_users", {
 
 export const rifas = pgTable("rifas", {
   id: serial("id").primaryKey(),
+  ownerAdminId: integer("owner_admin_id").references(() => adminUsers.id, { onDelete: "set null" }),
   slug: varchar("slug", { length: 120 }).notNull().unique(),
   nome: varchar("nome", { length: 180 }).notNull(),
   descricao: text("descricao").notNull(),
@@ -119,7 +120,8 @@ export const auditLogs = pgTable("audit_logs", {
 });
 
 // Relations
-export const rifasRelations = relations(rifas, ({ many }) => ({ 
+export const rifasRelations = relations(rifas, ({ one, many }) => ({ 
+  owner: one(adminUsers, { fields: [rifas.ownerAdminId], references: [adminUsers.id] }),
   pedidos: many(pedidos), 
   bilhetes: many(bilhetes),
   premios: many(premios),
@@ -127,6 +129,7 @@ export const rifasRelations = relations(rifas, ({ many }) => ({
 }));
 
 export const adminUsersRelations = relations(adminUsers, ({ many }) => ({
+  rifas: many(rifas),
   confirmacoes: many(pedidos, { relationName: "confirmadoPor" }),
   cancelamentos: many(pedidos, { relationName: "canceladoPor" }),
   logs: many(auditLogs)
