@@ -1,6 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious } from "@/components/ui/carousel";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
@@ -13,6 +14,8 @@ import { useLocation, useRoute } from "wouter";
 
 const moeda = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const DONOR_STORAGE_KEY = "rifa_doador_v1";
+
+const IMAGE_RATIO_GUIDE = "Formato recomendado: 16:9 — 1600x900px ou 1920x1080px";
 
 /**
  * Formata dataSorteio com segurança.
@@ -51,6 +54,7 @@ export default function Home() {
   const total = rifa ? Number(rifa.precoBilhete) * quantidade : 0;
   const escassez = progresso >= 80 ? "🔥 Últimos bilhetes!" : "⚡ Garanta sua chance!";
   const premios = rifa?.premios?.filter((premio) => premio.ativo !== false) ?? [];
+  const premiosComImagem = premios.filter((premio) => Boolean(premio.imagemUrl));
 
   // CORREÇÃO: useEffect duplicado removido — era executado duas vezes desnecessariamente
   useEffect(() => {
@@ -108,14 +112,94 @@ export default function Home() {
             <h1 className="text-3xl font-semibold leading-tight tracking-[-0.04em] md:text-4xl">{rifa.nome}</h1>
             <p className="max-w-2xl text-base leading-8 text-[#493624] md:text-lg">{rifa.descricao}</p>
 
-            {/* CORREÇÃO: imagem com fallback de erro para não quebrar o layout */}
+            {/* Imagem principal padronizada: 16:9, sem cortar o conteúdo da arte */}
             {rifa.imagemUrl ? (
-              <img
-                src={rifa.imagemUrl}
-                alt={rifa.nome}
-                className="h-[360px] w-full rounded-3xl object-cover shadow-[0_20px_60px_rgba(28,17,8,0.25)] md:h-[500px]"
-                onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-              />
+              <figure className="overflow-hidden rounded-3xl border border-[#eadbc2] bg-[#1f160d] shadow-[0_20px_60px_rgba(28,17,8,0.25)]">
+                <div className="aspect-[16/9] w-full">
+                  <img
+                    src={rifa.imagemUrl}
+                    alt={rifa.nome}
+                    className="h-full w-full object-contain"
+                    loading="eager"
+                    onError={(e) => { (e.currentTarget.closest("figure") as HTMLElement | null)?.remove(); }}
+                  />
+                </div>
+                <figcaption className="bg-white/95 px-4 py-3 text-xs text-[#6b4a2b] md:px-5">
+                  {IMAGE_RATIO_GUIDE}. Imagens fora desse formato continuam aparecendo completas, sem cortes.
+                </figcaption>
+              </figure>
+            ) : null}
+
+            {premios.length > 0 ? (
+              <section className="rounded-3xl border border-[#eadbc2] bg-white p-4 shadow-sm md:p-6">
+                <div className="mb-5 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+                  <div>
+                    <Badge className="border-[#e7c782] bg-[#f8ebd2] text-[#7f5525] hover:bg-[#f8ebd2]">
+                      <Gift className="mr-1 h-3 w-3" /> Fotos e detalhes da premiação
+                    </Badge>
+                    <h2 className="mt-3 text-2xl font-semibold tracking-[-0.03em]">
+                      Conheça o prêmio desta rifa
+                    </h2>
+                    <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                      {rifa.premio || "Veja as informações e imagens cadastradas para a premiação."}
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-[#f7eee0] px-3 py-1 text-xs font-medium text-[#7f5525]">
+                    Galeria em 16:9
+                  </span>
+                </div>
+
+                {premiosComImagem.length > 0 ? (
+                  <Carousel opts={{ align: "start", loop: premiosComImagem.length > 1 }} className="mx-auto w-full">
+                    <CarouselContent>
+                      {premiosComImagem.map((premio, index) => (
+                        <CarouselItem key={premio.id} className="basis-full">
+                          <article className="overflow-hidden rounded-2xl border border-[#ecdcc5] bg-[#fffaf2]">
+                            <div className="aspect-[16/9] w-full bg-[#1f160d]">
+                              <img
+                                src={premio.imagemUrl ?? ""}
+                                alt={premio.titulo}
+                                className="h-full w-full object-contain"
+                                loading={index === 0 ? "eager" : "lazy"}
+                                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                              />
+                            </div>
+                            <div className="p-4 md:p-5">
+                              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#9b6b35]">
+                                Imagem {index + 1} de {premiosComImagem.length}
+                              </p>
+                              <h3 className="mt-2 text-xl font-semibold text-[#2e2013]">{premio.titulo}</h3>
+                              {premio.descricao ? (
+                                <p className="mt-2 text-sm leading-6 text-[#493624]">{premio.descricao}</p>
+                              ) : null}
+                            </div>
+                          </article>
+                        </CarouselItem>
+                      ))}
+                    </CarouselContent>
+                    {premiosComImagem.length > 1 ? (
+                      <>
+                        <CarouselPrevious className="left-3 border-[#e7c782] bg-white/95 text-[#593b1f] hover:bg-white" />
+                        <CarouselNext className="right-3 border-[#e7c782] bg-white/95 text-[#593b1f] hover:bg-white" />
+                      </>
+                    ) : null}
+                  </Carousel>
+                ) : null}
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  {premios.map((premio, index) => (
+                    <article key={premio.id} className="rounded-2xl border border-[#ecdcc5] bg-[#fffaf2] p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#9b6b35]">
+                        Premiação {index + 1}
+                      </p>
+                      <h3 className="mt-2 text-base font-semibold text-[#2e2013]">{premio.titulo}</h3>
+                      {premio.descricao ? (
+                        <p className="mt-2 text-sm leading-6 text-[#493624]">{premio.descricao}</p>
+                      ) : null}
+                    </article>
+                  ))}
+                </div>
+              </section>
             ) : null}
 
             <div className="grid gap-4 md:grid-cols-3">
@@ -143,52 +227,6 @@ export default function Home() {
               </Card>
             </div>
 
-            {premios.length > 0 ? (
-              <section className="rounded-3xl border border-[#eadbc2] bg-white p-4 shadow-sm md:p-6">
-                <div className="mb-5 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-                  <div>
-                    <Badge className="border-[#e7c782] bg-[#f8ebd2] text-[#7f5525] hover:bg-[#f8ebd2]">
-                      <Gift className="mr-1 h-3 w-3" /> Fotos e detalhes da premiação
-                    </Badge>
-                    <h2 className="mt-3 text-2xl font-semibold tracking-[-0.03em]">
-                      Conheça o prêmio desta rifa
-                    </h2>
-                    <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                      Veja as imagens e informações cadastradas para a premiação antes de reservar seus bilhetes.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="grid gap-4 sm:grid-cols-2">
-                  {premios.map((premio, index) => (
-                    <article
-                      key={premio.id}
-                      className={index === 0 ? "overflow-hidden rounded-2xl border border-[#ecdcc5] bg-[#fffaf2] sm:col-span-2" : "overflow-hidden rounded-2xl border border-[#ecdcc5] bg-[#fffaf2]"}
-                    >
-                      {premio.imagemUrl ? (
-                        <img
-                          src={premio.imagemUrl}
-                          alt={premio.titulo}
-                          className={index === 0 ? "h-[260px] w-full object-cover md:h-[360px]" : "h-[210px] w-full object-cover"}
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).style.display = "none";
-                          }}
-                        />
-                      ) : null}
-                      <div className="p-4 md:p-5">
-                        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#9b6b35]">
-                          Premiação {index + 1}
-                        </p>
-                        <h3 className="mt-2 text-lg font-semibold text-[#2e2013]">{premio.titulo}</h3>
-                        {premio.descricao ? (
-                          <p className="mt-2 text-sm leading-6 text-[#493624]">{premio.descricao}</p>
-                        ) : null}
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              </section>
-            ) : null}
           </div>
 
           <Card className="sticky top-5 h-fit border-[#e8dbc8] bg-white shadow-[0_30px_70px_rgba(37,23,9,0.18)]">
