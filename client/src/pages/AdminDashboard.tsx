@@ -98,16 +98,20 @@ function parsearPreco(valor: string): number {
 // ─── Componente de Upload de Imagem ──────────────────────────────────────────
 function ImageUpload({
   label,
+  description,
   currentUrl,
   onUploaded,
   assetType,
   rifaId,
+  aspectRatio = "video",
 }: {
   label: string;
+  description?: string;
   currentUrl: string | null;
   onUploaded: (url: string) => void;
   assetType: "rifa_main" | "premio" | "comprovante";
   rifaId?: number;
+  aspectRatio?: "video" | "square";
 }) {
   const [preview, setPreview] = useState<string | null>(currentUrl);
   const [uploading, setUploading] = useState(false);
@@ -150,11 +154,21 @@ function ImageUpload({
     }
   }
 
+  const frameRatioClass =
+    aspectRatio === "square"
+      ? "mx-auto aspect-square w-full max-w-[320px]"
+      : "aspect-[16/9] w-full";
+
   return (
     <div className="space-y-2">
-      <Label className="text-sm font-semibold">{label}</Label>
+      <div className="space-y-1">
+        <Label className="text-sm font-semibold">{label}</Label>
+        {description ? (
+          <p className="text-xs leading-5 text-muted-foreground">{description}</p>
+        ) : null}
+      </div>
       <div
-        className="relative flex aspect-[16/9] min-h-[160px] cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-[#d5b078] bg-[#fdf8f0] transition hover:border-[#a06a31] hover:bg-[#faf0e0]"
+        className={`relative flex ${frameRatioClass} min-h-[160px] cursor-pointer flex-col items-center justify-center gap-2 overflow-hidden rounded-xl border-2 border-dashed border-[#d5b078] bg-[#fdf8f0] transition hover:border-[#a06a31] hover:bg-[#faf0e0]`}
         onClick={() => inputRef.current?.click()}
       >
         {uploading ? (
@@ -164,7 +178,7 @@ function ImageUpload({
             <img
               src={preview}
               alt="Preview"
-              className="h-full max-h-[240px] w-full rounded-lg object-contain p-2"
+              className="h-full w-full rounded-lg object-contain p-2"
               onError={() => setPreview(null)}
             />
             <p className="text-xs text-muted-foreground">Clique para trocar</p>
@@ -553,23 +567,25 @@ function RifaForm({ rifa, onSaved }: { rifa?: RifaRow | null; onSaved: () => voi
           <div className="space-y-2">
             <ImageUpload
               label="Imagem principal (exibida na página de compra)"
+              description="Use arte horizontal 16:9 — ideal 1600×900px ou 1920×1080px. A página pública exibe a imagem inteira, sem corte, no mobile, tablet e desktop."
               currentUrl={form.imagemUrl || null}
               assetType="rifa_main"
               rifaId={rifa?.id}
+              aspectRatio="video"
               onUploaded={(url) => handleChange("imagemUrl", url)}
             />
-            <p className="text-xs text-muted-foreground">Proporção ideal: <strong>9:16</strong> (ex: 1080×1920 px)</p>
           </div>
           {/* Thumbnail Open Graph */}
           <div className="space-y-2">
             <ImageUpload
               label="Thumbnail (preview ao compartilhar link)"
+              description="Use imagem quadrada 1:1 — ideal 1080×1080px. Essa imagem aparece melhor no WhatsApp, Instagram e redes sociais."
               currentUrl={form.thumbnailUrl || null}
               assetType="rifa_main"
               rifaId={rifa?.id}
+              aspectRatio="square"
               onUploaded={(url) => handleChange("thumbnailUrl", url)}
             />
-            <p className="text-xs text-muted-foreground">Aparece no WhatsApp/Instagram ao compartilhar o link. Proporção ideal: <strong>9:16</strong> (ex: 1080×1920 px)</p>
             {form.thumbnailUrl && (
               <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2">
                 <span className="text-xs font-medium text-green-700">✓ Thumbnail configurada — aparecerá ao compartilhar o link</span>
@@ -690,9 +706,11 @@ function PremioForm({
       </div>
       <ImageUpload
         label="Foto do prêmio"
+        description="Use fotos horizontais 16:9 — ideal 1600×900px ou 1920×1080px. Na página pública elas aparecem em cards grandes, sem corte."
         currentUrl={form.imagemUrl || null}
         assetType="premio"
         rifaId={rifaId}
+        aspectRatio="video"
         onUploaded={(url) => setForm((p) => ({ ...p, imagemUrl: url }))}
       />
       <div className="flex items-center gap-3">
@@ -1175,11 +1193,11 @@ export default function AdminDashboard() {
                               <img
                                 src={p.imagemUrl}
                                 alt={p.titulo}
-                                className="h-16 w-16 shrink-0 rounded-xl object-cover"
+                                className="h-24 w-36 shrink-0 rounded-xl bg-[#fffaf2] object-contain p-1"
                                 onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
                               />
                             ) : (
-                              <div className="grid h-16 w-16 shrink-0 place-items-center rounded-xl bg-[#f4dfbc]">
+                              <div className="grid h-24 w-36 shrink-0 place-items-center rounded-xl bg-[#f4dfbc]">
                                 <Gift className="h-7 w-7 text-[#a06a31]" />
                               </div>
                             )}
