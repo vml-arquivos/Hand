@@ -130,17 +130,17 @@ function RifaCard({ rifa }: { rifa: RifaListItem }) {
   return (
     <Link href={`/rifa/${rifa.slug}`}>
       <Card className="group cursor-pointer overflow-hidden border-[#e6d8c1] bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
-        {/* Imagem: mostra a imagem inteira sem corte, altura dinâmica */}
-        <div className="relative w-full bg-[#f7eee0]">
+        {/* Imagem da vitrine: moldura 16:9 fixa, sem corte e com cards alinhados */}
+        <div className="relative flex aspect-[16/9] w-full items-center justify-center overflow-hidden bg-[#f7eee0]">
           {thumb ? (
             <img
               src={thumb}
               alt={rifa.nome}
-              className="w-full h-auto block transition-transform duration-300 group-hover:scale-[1.02]"
-              style={{ maxHeight: '480px', objectFit: 'contain' }}
+              className="h-full w-full object-contain p-1 transition-transform duration-300 group-hover:scale-[1.02]"
+              loading="lazy"
             />
           ) : (
-            <div className="flex items-center justify-center bg-[#f7eee0]" style={{ minHeight: '280px' }}>
+            <div className="flex h-full w-full items-center justify-center bg-[#f7eee0]">
               <Gift className="h-16 w-16 text-[#d5b078]" />
             </div>
           )}
@@ -338,16 +338,17 @@ function RifaPage({ slug }: { slug: string }) {
           {/* ── Coluna esquerda: info da rifa ── */}
           <div className="space-y-6">
 
-            {/* Imagem principal — sem corte, mostra a imagem inteira */}
-            <div className="w-full overflow-hidden rounded-2xl bg-[#f7eee0] shadow-sm flex items-center justify-center" style={{ minHeight: '240px', maxHeight: '600px' }}>
+            {/* Imagem principal: moldura 16:9 responsiva, sem corte em mobile/tablet/desktop */}
+            <div className="flex aspect-[16/9] w-full items-center justify-center overflow-hidden rounded-2xl bg-[#1f160d] shadow-sm">
               {rifa.imagemUrl ? (
                 <img
                   src={rifa.imagemUrl}
                   alt={rifa.nome}
-                  className="w-full h-auto max-h-[600px] object-contain"
+                  className="h-full w-full object-contain"
+                  loading="eager"
                 />
               ) : (
-                <div className="flex h-full w-full items-center justify-center">
+                <div className="flex h-full w-full items-center justify-center bg-[#f7eee0]">
                   <Gift className="h-20 w-20 text-[#d5b078]" />
                 </div>
               )}
@@ -395,41 +396,50 @@ function RifaPage({ slug }: { slug: string }) {
               <Progress value={progresso} className="h-2.5 bg-[#f0e4d0]" />
             </div>
 
-            {/* Prêmios */}
+            {/* Prêmios: cards grandes 16:9, sem corte das fotos */}
             {rifa.premios && rifa.premios.length > 0 && (
-              <div>
-                <h2 className="mb-3 flex items-center gap-2 text-lg font-bold text-[#2b2116]">
-                  <Trophy className="h-5 w-5 text-[#a06a31]" />
-                  Prêmios
-                </h2>
-                <div className="grid gap-3 sm:grid-cols-2">
+              <section className="rounded-2xl border border-[#e6d8c1] bg-white p-4 shadow-sm sm:p-5">
+                <div className="mb-4">
+                  <h2 className="flex items-center gap-2 text-lg font-bold text-[#2b2116]">
+                    <Trophy className="h-5 w-5 text-[#a06a31]" />
+                    Conheça a premiação
+                  </h2>
+                  <p className="mt-1 text-sm leading-relaxed text-[#7a5a3a]">
+                    Veja as fotos e os detalhes cadastrados para o prêmio desta rifa.
+                  </p>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
                   {rifa.premios.map((p, i) => (
-                    <div key={p.id} className="flex gap-3 rounded-xl border border-[#e6d8c1] bg-white p-3">
-                      {/* Imagem do prêmio — proporção 1:1 */}
-                      <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-[#f7eee0]">
+                    <article key={p.id} className="overflow-hidden rounded-2xl border border-[#ecdcc5] bg-[#fffaf2]">
+                      <div className="flex aspect-[16/9] w-full items-center justify-center bg-[#1f160d]">
                         {p.imagemUrl ? (
-                          <img src={p.imagemUrl} alt={p.titulo} className="h-full w-full object-contain p-1" />
+                          <img
+                            src={p.imagemUrl}
+                            alt={p.titulo}
+                            className="h-full w-full object-contain"
+                            loading={i === 0 ? "eager" : "lazy"}
+                          />
                         ) : (
-                          <div className="flex h-full w-full items-center justify-center">
-                            <Gift className="h-7 w-7 text-[#d5b078]" />
+                          <div className="flex h-full w-full items-center justify-center bg-[#f7eee0]">
+                            <Gift className="h-10 w-10 text-[#d5b078]" />
                           </div>
                         )}
                       </div>
-                      <div className="min-w-0">
-                        <div className="mb-0.5 flex items-center gap-1.5">
-                          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#2b2116] text-[10px] font-bold text-white">
+                      <div className="p-4">
+                        <div className="mb-1.5 flex items-center gap-2">
+                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#2b2116] text-xs font-bold text-white">
                             {i + 1}
                           </span>
-                          <p className="truncate text-sm font-semibold text-[#2b2116]">{p.titulo}</p>
+                          <h3 className="text-base font-bold text-[#2b2116]">{p.titulo}</h3>
                         </div>
-                        {p.descricao && (
-                          <p className="line-clamp-2 text-xs leading-relaxed text-[#9b6b35]">{p.descricao}</p>
-                        )}
+                        {p.descricao ? (
+                          <p className="text-sm leading-relaxed text-[#7a5a3a]">{p.descricao}</p>
+                        ) : null}
                       </div>
-                    </div>
+                    </article>
                   ))}
                 </div>
-              </div>
+              </section>
             )}
           </div>
 
