@@ -1,6 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious } from "@/components/ui/carousel";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
@@ -34,6 +35,31 @@ function formatarData(data?: string | null) {
   const d = new Date(data);
   if (isNaN(d.getTime())) return data;
   return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
+}
+
+const IMAGE_RATIO_GUIDE = "Formato recomendado: 16:9 — 1600x900px ou 1920x1080px";
+
+/**
+ * Formata dataSorteio com segurança.
+ * Aceita "YYYY-MM-DD", "DD/MM/YYYY" ou qualquer string.
+ * Retorna no formato "DD/MM/YYYY" ou a string original se não reconhecer.
+ */
+function formatarData(valor?: string | null): string {
+  if (!valor) return "A definir";
+
+  // Formato ISO: "2026-06-19" → "19/06/2026"
+  const iso = valor.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
+
+  // Já está em DD/MM/YYYY — valida minimamente
+  const br = valor.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (br) {
+    const dia = parseInt(br[1]), mes = parseInt(br[2]);
+    if (dia >= 1 && dia <= 31 && mes >= 1 && mes <= 12) return valor;
+  }
+
+  // Fallback: devolve o que veio
+  return valor;
 }
 
 export default function Home() {

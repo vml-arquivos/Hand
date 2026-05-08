@@ -143,7 +143,7 @@ function ImageUpload({
     <div className="space-y-2">
       <Label className="text-sm font-semibold">{label}</Label>
       <div
-        className="relative flex min-h-[140px] cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-[#d5b078] bg-[#fdf8f0] transition hover:border-[#a06a31] hover:bg-[#faf0e0]"
+        className="relative flex aspect-[16/9] min-h-[160px] cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-[#d5b078] bg-[#fdf8f0] transition hover:border-[#a06a31] hover:bg-[#faf0e0]"
         onClick={() => inputRef.current?.click()}
       >
         {uploading ? (
@@ -153,7 +153,7 @@ function ImageUpload({
             <img
               src={preview}
               alt="Preview"
-              className="max-h-[120px] max-w-full rounded-lg object-contain"
+              className="h-full max-h-[240px] w-full rounded-lg object-contain p-2"
               onError={() => setPreview(null)}
             />
             <p className="text-xs text-muted-foreground">Clique para trocar</p>

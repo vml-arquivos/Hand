@@ -8,15 +8,12 @@
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Diretório de uploads: /app/uploads (persistido via volume Docker)
 // Em desenvolvimento: <raiz do projeto>/uploads
 const UPLOADS_DIR = process.env.UPLOAD_DIR
   ? resolve(process.env.UPLOAD_DIR)
-  : resolve(__dirname, "..", "uploads");
+  : resolve(process.cwd(), "uploads");
 
 // Base URL pública para as imagens (sem barra final)
 // Em produção com proxy reverso, manter como "/uploads" (relativo)

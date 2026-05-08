@@ -11,6 +11,8 @@ FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
+ENV UPLOAD_DIR=/app/uploads
+ENV PUBLIC_UPLOAD_BASE_URL=/uploads
 RUN corepack enable
 
 COPY --from=builder /app/dist ./dist
