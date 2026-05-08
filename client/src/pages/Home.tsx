@@ -130,16 +130,17 @@ function RifaCard({ rifa }: { rifa: RifaListItem }) {
   return (
     <Link href={`/rifa/${rifa.slug}`}>
       <Card className="group cursor-pointer overflow-hidden border-[#e6d8c1] bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
-        {/* Imagem: quadrada no mobile, 3:4 no desktop */}
-        <div className="relative w-full overflow-hidden bg-[#f7eee0] aspect-square sm:aspect-[3/4]">
+        {/* Imagem: mostra a imagem inteira sem corte, altura dinâmica */}
+        <div className="relative w-full bg-[#f7eee0]">
           {thumb ? (
             <img
               src={thumb}
               alt={rifa.nome}
-              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+              className="w-full h-auto block transition-transform duration-300 group-hover:scale-[1.02]"
+              style={{ maxHeight: '480px', objectFit: 'contain' }}
             />
           ) : (
-            <div className="flex h-full w-full items-center justify-center">
+            <div className="flex items-center justify-center bg-[#f7eee0]" style={{ minHeight: '280px' }}>
               <Gift className="h-16 w-16 text-[#d5b078]" />
             </div>
           )}
@@ -337,13 +338,13 @@ function RifaPage({ slug }: { slug: string }) {
           {/* ── Coluna esquerda: info da rifa ── */}
           <div className="space-y-6">
 
-            {/* Imagem principal — 16:9 no mobile, 9:16 no desktop (limitado) */}
-            <div className="w-full overflow-hidden rounded-2xl bg-[#f7eee0] shadow-sm aspect-video lg:aspect-[9/16] lg:max-h-[520px]">
+            {/* Imagem principal — sem corte, mostra a imagem inteira */}
+            <div className="w-full overflow-hidden rounded-2xl bg-[#f7eee0] shadow-sm flex items-center justify-center" style={{ minHeight: '240px', maxHeight: '600px' }}>
               {rifa.imagemUrl ? (
                 <img
                   src={rifa.imagemUrl}
                   alt={rifa.nome}
-                  className="h-full w-full object-cover"
+                  className="w-full h-auto max-h-[600px] object-contain"
                 />
               ) : (
                 <div className="flex h-full w-full items-center justify-center">
@@ -407,7 +408,7 @@ function RifaPage({ slug }: { slug: string }) {
                       {/* Imagem do prêmio — proporção 1:1 */}
                       <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-[#f7eee0]">
                         {p.imagemUrl ? (
-                          <img src={p.imagemUrl} alt={p.titulo} className="h-full w-full object-cover" />
+                          <img src={p.imagemUrl} alt={p.titulo} className="h-full w-full object-contain p-1" />
                         ) : (
                           <div className="flex h-full w-full items-center justify-center">
                             <Gift className="h-7 w-7 text-[#d5b078]" />
