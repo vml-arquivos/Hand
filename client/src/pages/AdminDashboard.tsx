@@ -1247,6 +1247,16 @@ type RifaItem = { id: number; nome: string; totalBilhetes: number };
 function BilhetesTab({ rifas }: { rifas: RifaItem[] }) {
   const [rifaId, setRifaId] = useState<number | null>(rifas[0]?.id ?? null);
   const [busca, setBusca] = useState("");
+  const [confirmandoLimpeza, setConfirmandoLimpeza] = useState(false);
+  const utils = trpc.useUtils();
+  const limparBilhetes = trpc.admin.limparBilhetesTeste.useMutation({
+    onSuccess: (data) => {
+      toast.success(`${(data as { pedidosRemovidos: number }).pedidosRemovidos} pedido(s) removido(s) com sucesso.`);
+      setConfirmandoLimpeza(false);
+      utils.admin.listBilhetes.invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
 
   const { data: bilhetes, isLoading } = trpc.admin.listBilhetes.useQuery(
     { rifaId: rifaId! },
@@ -1350,6 +1360,40 @@ function BilhetesTab({ rifas }: { rifas: RifaItem[] }) {
           <Trophy className="mr-1.5 h-4 w-4" />
           Sortear
         </Button>
+        {/* Botão apagar bilhetes de teste */}
+        {!confirmandoLimpeza ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-10 border-red-200 text-red-600 hover:bg-red-50"
+            onClick={() => setConfirmandoLimpeza(true)}
+            disabled={!rifaId}
+          >
+            <Trash2 className="mr-1.5 h-4 w-4" />
+            <span className="hidden sm:inline">Apagar testes</span>
+            <span className="sm:hidden">Apagar</span>
+          </Button>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-1.5">
+            <span className="text-xs font-medium text-red-700">Apagar pedidos pendentes desta rifa?</span>
+            <Button
+              size="sm"
+              className="h-7 bg-red-600 text-xs text-white hover:bg-red-700"
+              onClick={() => rifaId && limparBilhetes.mutate({ rifaId, apenasStatus: "pendente" })}
+              disabled={limparBilhetes.isPending}
+            >
+              {limparBilhetes.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Confirmar"}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs text-red-600"
+              onClick={() => setConfirmandoLimpeza(false)}
+            >
+              Cancelar
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Resumo */}

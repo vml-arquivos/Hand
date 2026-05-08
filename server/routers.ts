@@ -192,13 +192,14 @@ export const appRouter = router({
           premio: z.string().optional().or(z.literal("")),
           dataSorteio: z.string().optional().or(z.literal("")),
           imagemUrl: z.string().optional().or(z.literal("")),
+          thumbnailUrl: z.string().optional().or(z.literal("")),
           totalBilhetes: z.number().int().min(1),
           // Aceita string ou número — o frontend pode enviar "10,00" ou 10.00
           precoBilhete: z.union([z.string().min(1), z.number()]),
           pixChave: z.string().min(3),
           pixCopiaCola: z.string().min(10),
-          nomeRecebedor: z.string().optional(),
-          cidadeRecebedor: z.string().optional(),
+          nomeRecebedor: z.string().optional().or(z.literal("")),
+          cidadeRecebedor: z.string().optional().or(z.literal("")),
           ativa: z.boolean(),
         }),
       )
@@ -219,8 +220,10 @@ export const appRouter = router({
           premio: input.premio || null,
           dataSorteio: input.dataSorteio || null,
           imagemUrl: input.imagemUrl || null,
+          thumbnailUrl: input.thumbnailUrl || null,
+          nomeRecebedor: input.nomeRecebedor || null,
+          cidadeRecebedor: input.cidadeRecebedor || null,
         };
-
         let result;
         if (input.id) {
           result = await db.updateRifa({ ...data, id: input.id });
@@ -232,13 +235,14 @@ export const appRouter = router({
             details: { nome: result.nome, precoBilhete: precoFormatado },
           });
         } else {
-          result = await db.createRifa(data);
+          // Ao criar nova rifa, vincula automaticamente ao admin logado
+          result = await db.createRifa({ ...data, ownerAdminId: ctx.admin.id });
           await db.createAuditLog({
             adminUserId: ctx.admin.id,
             action: "create_rifa",
             entityType: "rifa",
             entityId: result.id,
-            details: { nome: result.nome, precoBilhete: precoFormatado },
+            details: { nome: result.nome, slug: result.slug, precoBilhete: precoFormatado },
           });
         }
         return result;
@@ -284,6 +288,24 @@ export const appRouter = router({
       await db.createAuditLog({ adminUserId: ctx.admin.id, action: "cancel_order", entityType: "pedido", entityId: input.pedidoId });
       return result;
     }),
+
+    // Apaga bilhetes e pedidos de uma rifa (apenas pendentes ou todos os de teste)
+    limparBilhetesTeste: adminProcedure
+      .input(z.object({
+        rifaId: z.number().int().positive(),
+        apenasStatus: z.enum(["pendente", "todos"]).default("pendente"),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const total = await db.limparBilhetesTeste(input.rifaId, input.apenasStatus, ctx.admin.id);
+        await db.createAuditLog({
+          adminUserId: ctx.admin.id,
+          action: "limpar_bilhetes_teste",
+          entityType: "rifa",
+          entityId: input.rifaId,
+          details: { apenasStatus: input.apenasStatus, pedidosRemovidos: total },
+        });
+        return { pedidosRemovidos: total };
+      }),
 
     salvarRifaComOwner: adminProcedure
       .input(z.object({ rifaId: z.number().int().positive() }))

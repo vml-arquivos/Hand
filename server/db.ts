@@ -562,3 +562,26 @@ export async function listBilhetesCompleto(rifaId: number) {
     createdAt: row.bilhete.createdAt,
   }));
 }
+
+// --- LIMPEZA DE BILHETES DE TESTE ---
+export async function limparBilhetesTeste(
+  rifaId: number,
+  apenasStatus: "pendente" | "todos",
+  _adminUserId: number
+): Promise<number> {
+  const db = requireDbSync(await getDb());
+  const pedidosFiltro = apenasStatus === "pendente"
+    ? and(eq(pedidos.rifaId, rifaId), eq(pedidos.status, "pendente"))
+    : eq(pedidos.rifaId, rifaId);
+  const pedidosAlvo = await db
+    .select({ id: pedidos.id })
+    .from(pedidos)
+    .where(pedidosFiltro);
+  if (!pedidosAlvo.length) return 0;
+  const ids = pedidosAlvo.map(p => p.id);
+  // Remove bilhetes vinculados a esses pedidos
+  await db.delete(bilhetes).where(inArray(bilhetes.pedidoId, ids));
+  // Remove os pedidos
+  await db.delete(pedidos).where(inArray(pedidos.id, ids));
+  return ids.length;
+}
