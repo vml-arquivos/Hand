@@ -50,6 +50,7 @@ export default function Home() {
   const progresso = useMemo(() => (rifa ? Math.min(100, Math.round((rifa.vendidos / rifa.totalBilhetes) * 100)) : 0), [rifa]);
   const total = rifa ? Number(rifa.precoBilhete) * quantidade : 0;
   const escassez = progresso >= 80 ? "🔥 Últimos bilhetes!" : "⚡ Garanta sua chance!";
+  const premios = rifa?.premios?.filter((premio) => premio.ativo !== false) ?? [];
 
   // CORREÇÃO: useEffect duplicado removido — era executado duas vezes desnecessariamente
   useEffect(() => {
@@ -141,6 +142,53 @@ export default function Home() {
                 </CardContent>
               </Card>
             </div>
+
+            {premios.length > 0 ? (
+              <section className="rounded-3xl border border-[#eadbc2] bg-white p-4 shadow-sm md:p-6">
+                <div className="mb-5 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+                  <div>
+                    <Badge className="border-[#e7c782] bg-[#f8ebd2] text-[#7f5525] hover:bg-[#f8ebd2]">
+                      <Gift className="mr-1 h-3 w-3" /> Fotos e detalhes da premiação
+                    </Badge>
+                    <h2 className="mt-3 text-2xl font-semibold tracking-[-0.03em]">
+                      Conheça o prêmio desta rifa
+                    </h2>
+                    <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                      Veja as imagens e informações cadastradas para a premiação antes de reservar seus bilhetes.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {premios.map((premio, index) => (
+                    <article
+                      key={premio.id}
+                      className={index === 0 ? "overflow-hidden rounded-2xl border border-[#ecdcc5] bg-[#fffaf2] sm:col-span-2" : "overflow-hidden rounded-2xl border border-[#ecdcc5] bg-[#fffaf2]"}
+                    >
+                      {premio.imagemUrl ? (
+                        <img
+                          src={premio.imagemUrl}
+                          alt={premio.titulo}
+                          className={index === 0 ? "h-[260px] w-full object-cover md:h-[360px]" : "h-[210px] w-full object-cover"}
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = "none";
+                          }}
+                        />
+                      ) : null}
+                      <div className="p-4 md:p-5">
+                        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#9b6b35]">
+                          Premiação {index + 1}
+                        </p>
+                        <h3 className="mt-2 text-lg font-semibold text-[#2e2013]">{premio.titulo}</h3>
+                        {premio.descricao ? (
+                          <p className="mt-2 text-sm leading-6 text-[#493624]">{premio.descricao}</p>
+                        ) : null}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            ) : null}
           </div>
 
           <Card className="sticky top-5 h-fit border-[#e8dbc8] bg-white shadow-[0_30px_70px_rgba(37,23,9,0.18)]">
