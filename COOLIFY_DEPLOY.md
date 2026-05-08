@@ -26,10 +26,14 @@ No Coolify, você encontrará uma área chamada **Environment Variables** ou **V
 | `NODE_ENV` | `production` | Informa que o sistema está em produção. |
 | `PORT` | `3000` | Porta interna usada pelo container do sistema. |
 | `VITE_APP_TITLE` | `Sistema de Rifas Beneficentes` | Nome que aparece no navegador/app. |
+| `UPLOAD_DIR` | `/app/uploads` | Diretório persistente onde as imagens enviadas pelo painel são salvas. |
+| `PUBLIC_UPLOAD_BASE_URL` | `/uploads` | Caminho público usado pelo navegador para carregar as imagens. |
 | `POSTGRES_DB` | `rifas` | Nome do banco de dados. |
 | `POSTGRES_USER` | `rifas` | Usuário do banco. |
 | `POSTGRES_PASSWORD` | `crie-uma-senha-forte` | Senha do banco PostgreSQL. |
 | `DATABASE_URL` | `postgresql://rifas:SENHA_DO_BANCO@postgres:5432/rifas` | Endereço completo de conexão com o banco. |
+| `ADMIN_EMAIL` | `admin@seudominio.com` | E-mail usado para criar o primeiro administrador. |
+| `ADMIN_NAME` | `Administrador` | Nome do primeiro administrador. |
 | `ADMIN_PASSWORD` | `crie-uma-senha-do-admin` | Senha para entrar no painel `/admin`. |
 | `JWT_SECRET` | `texto-longo-com-mais-de-32-caracteres` | Chave interna de segurança da aplicação. |
 | `DB_MIGRATION_ATTEMPTS` | `30` | Quantas vezes o app tenta esperar o banco iniciar. |
