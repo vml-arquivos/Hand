@@ -1093,7 +1093,6 @@ export default function AdminDashboard() {
                   Nova rifa
                 </Button>
               </div>
-              </div>
 
               {!rifas?.length ? (
                 <div className="rounded-2xl border border-dashed border-[#d5b078] bg-white py-10 text-center">
