@@ -143,6 +143,13 @@ export const appRouter = router({
         const resultados = await db.getPedidosByTelefone(input.telefone);
         return resultados;
       }),
+
+    // Busca dados do vendedor pelo código (usado na página pública para exibir banner do aluno)
+    getVendedorByCodigo: publicProcedure
+      .input(z.object({ rifaId: z.number(), codigo: z.string() }))
+      .query(async ({ input }) => {
+        return db.getVendedorByCodigo(input.rifaId, input.codigo);
+      }),
   }),
 
   // --- ADMIN PROTECTED ROUTES ---
@@ -314,12 +321,6 @@ export const appRouter = router({
     rankingVendedores: adminProcedure.input(z.object({ rifaId: z.number() })).query(async ({ input }) => {
       return db.getRankingVendedores(input.rifaId);
     }),
-    getVendedorByCodigo: publicProcedure
-      .input(z.object({ rifaId: z.number(), codigo: z.string() }))
-      .query(async ({ input }) => {
-        return db.getVendedorByCodigo(input.rifaId, input.codigo);
-      }),
-
     confirmarPedido: adminProcedure.input(z.object({ pedidoId: z.number().int().positive() })).mutation(async ({ input, ctx }) => {
       const result = await db.confirmarPedido(input.pedidoId, ctx.admin.id);
       await db.createAuditLog({ adminUserId: ctx.admin.id, action: "confirm_order", entityType: "pedido", entityId: input.pedidoId });
