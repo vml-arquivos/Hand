@@ -293,7 +293,12 @@ export const appRouter = router({
     importarVendedores: adminProcedure
       .input(z.object({
         rifaId: z.number(),
-        vendedores: z.array(z.object({ nome: z.string(), codigo: z.string() })),
+        vendedores: z.array(z.object({ 
+          nome: z.string(), 
+          professor: z.string().optional(),
+          turma: z.string().optional(),
+          codigo: z.string() 
+        })),
       }))
       .mutation(async ({ input, ctx }) => {
         const result = await db.upsertVendedores(input.rifaId, input.vendedores);

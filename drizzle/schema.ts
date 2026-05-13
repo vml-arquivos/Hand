@@ -54,6 +54,8 @@ export const vendedores = pgTable("vendedores", {
   id: serial("id").primaryKey(),
   rifaId: integer("rifa_id").notNull().references(() => rifas.id, { onDelete: "cascade" }),
   nome: varchar("nome", { length: 180 }).notNull(),
+  professor: varchar("professor", { length: 180 }),
+  turma: varchar("turma", { length: 100 }),
   codigo: varchar("codigo", { length: 50 }).notNull(),
   ativo: boolean("ativo").default(true).notNull(),
   createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),

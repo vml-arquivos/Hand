@@ -175,14 +175,14 @@ function RifaPage({ slug }: { slug: string }) {
   const [, navigate] = useLocation();
   const { data: rifa, isLoading, error } = trpc.rifa.public.useQuery({ slug });
   const [vendedorCodigo, setVendedorCodigo] = useState<string | null>(null);
-  const [vendedorNome, setVendedorNome] = useState<string | null>(null);
+  const [vendedorData, setVendedorData] = useState<{ nome: string; professor?: string | null; turma?: string | null } | null>(null);
   
-  // Busca nome do vendedor se houver código
+  // Busca dados do vendedor se houver código
   trpc.admin.getVendedorByCodigo.useQuery(
     { rifaId: rifa?.id!, codigo: vendedorCodigo! },
     { 
       enabled: !!rifa?.id && !!vendedorCodigo,
-      onSuccess: (data) => data && setVendedorNome(data.nome)
+      onSuccess: (data) => data && setVendedorData(data)
     }
   );
 
@@ -388,10 +388,17 @@ function RifaPage({ slug }: { slug: string }) {
                   <Badge variant="secondary">Encerrada</Badge>
                 )}
               </div>
-              {vendedorNome && (
-                <div className="mb-3 flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 border border-amber-100">
-                  <Sparkles className="h-4 w-4 text-amber-500" />
-                  Você está comprando com o aluno: <span className="font-bold">{vendedorNome}</span>
+              {vendedorData && (
+                <div className="mb-3 flex flex-col gap-1 rounded-lg bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 border border-amber-100">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-amber-500" />
+                    Você está comprando com o aluno: <span className="font-bold">{vendedorData.nome}</span>
+                  </div>
+                  {(vendedorData.professor || vendedorData.turma) && (
+                    <p className="ml-6 text-[10px] text-amber-700 opacity-80">
+                      {vendedorData.professor && `Prof: ${vendedorData.professor}`} {vendedorData.turma && `· Turma: ${vendedorData.turma}`}
+                    </p>
+                  )}
                 </div>
               )}
               <p className="leading-relaxed text-[#5b3a1c]">{rifa.descricao}</p>

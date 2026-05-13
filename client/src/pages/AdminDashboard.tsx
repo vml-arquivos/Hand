@@ -768,6 +768,7 @@ export default function AdminDashboard() {
   const adminName = me.data?.name ?? "";
   const [editingRifa, setEditingRifa] = useState<RifaRow | null>(null);
   const [selectedRifaId, setSelectedRifaId] = useState<number | null>(null);
+  const [activeTab, setActiveTab] = useState("pedidos");
 
   // Auto-seleciona a primeira rifa quando os dados carregam
   useEffect(() => {
@@ -902,7 +903,7 @@ export default function AdminDashboard() {
         </div>
 
         {/* ── Tabs principais ───────────────────────────────────────────── */}
-        <Tabs defaultValue="pedidos">
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="mb-6 h-auto w-full flex-wrap gap-1 bg-[#f0e8d8] p-1">
             <TabsTrigger value="pedidos" className="flex-1 text-xs sm:text-sm">
               <Clock3 className="mr-1.5 h-4 w-4" />
@@ -1063,7 +1064,7 @@ export default function AdminDashboard() {
 
           {/* ── Tab: Rifas ────────────────────────────────────────────────── */}
           <TabsContent value="rifas" className="space-y-6">
-            {editingRifa !== undefined && (
+            {editingRifa !== null && (
               <Card className="border-[#ecdcc5] bg-white shadow-sm">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-lg">
@@ -1073,10 +1074,10 @@ export default function AdminDashboard() {
                 <CardContent>
                   <RifaForm
                     rifa={editingRifa}
-                    onSaved={() => {
-                      setEditingRifa(undefined as any);
-                      utils.admin.dashboard.invalidate();
-                    }}
+    onSaved={() => {
+      setEditingRifa(null);
+      utils.admin.dashboard.invalidate();
+    }}
                   />
                 </CardContent>
               </Card>
@@ -1774,16 +1775,28 @@ function VendedoresTab({ rifa }: { rifa: RifaRow }) {
   function handleImport() {
     const lines = rawText.split("\n").filter(l => l.trim().length > 0);
     if (lines.length === 0) {
-      toast.error("Cole os nomes dos alunos, um por linha.");
+      toast.error("Cole os dados dos alunos (Professor;Turma;Aluno), um por linha.");
       return;
     }
     
-    const data = lines.map(nome => {
-      const n = nome.trim();
+    const data = lines.map(line => {
+      const parts = line.split(";").map(p => p.trim());
+      let professor = "";
+      let turma = "";
+      let nome = "";
+
+      if (parts.length >= 3) {
+        [professor, turma, nome] = parts;
+      } else if (parts.length === 2) {
+        [turma, nome] = parts;
+      } else {
+        nome = parts[0];
+      }
+
       // Gera um código simples: slug do nome + 3 dígitos aleatórios
-      const slug = n.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-").slice(0, 15);
+      const slug = nome.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-").slice(0, 15);
       const rand = Math.floor(100 + Math.random() * 900);
-      return { nome: n, codigo: `${slug}-${rand}` };
+      return { nome, professor, turma, codigo: `${slug}-${rand}` };
     });
     
     importar.mutate({ rifaId: rifa.id, vendedores: data });
@@ -1821,6 +1834,9 @@ function VendedoresTab({ rifa }: { rifa: RifaRow }) {
                     </div>
                     <div>
                       <p className="font-bold text-[#1a0f06]">{r.nome}</p>
+                      <p className="text-[10px] text-[#9b6b35]">
+                        {r.professor && `Prof: ${r.professor}`} {r.turma && `· Turma: ${r.turma}`}
+                      </p>
                       <p className="text-xs text-[#9b6b35]">{r.totalPedidos} pedido(s)</p>
                     </div>
                   </div>
@@ -1848,11 +1864,12 @@ function VendedoresTab({ rifa }: { rifa: RifaRow }) {
           <Card className="border-amber-200 bg-amber-50">
             <CardContent className="p-4 space-y-4">
               <div className="space-y-1.5">
-                <Label>Cole os nomes dos alunos (um por linha)</Label>
+                <Label>Cole os dados (Professor; Turma; Aluno) - um por linha</Label>
+                <p className="text-[10px] text-amber-700">Exemplo: Maria Silva; 2º Ano A; Joãozinho</p>
                 <Textarea 
                   value={rawText} 
                   onChange={(e) => setRawText(e.target.value)} 
-                  placeholder="João Silva\nMaria Oliveira\n..." 
+                  placeholder="Professor; Turma; Aluno" 
                   rows={5}
                   className="bg-white"
                 />
@@ -1881,7 +1898,10 @@ function VendedoresTab({ rifa }: { rifa: RifaRow }) {
               <div key={v.id} className="flex items-center justify-between rounded-xl border border-[#ecdcc5] bg-white p-3 shadow-sm">
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-semibold text-[#1a0f06]">{v.nome}</p>
-                  <p className="text-[10px] font-mono text-[#9b6b35]">{v.codigo}</p>
+                  <p className="text-[10px] text-[#9b6b35]">
+                    {v.professor && `Prof: ${v.professor}`} {v.turma && `· Turma: ${v.turma}`}
+                  </p>
+                  <p className="text-[10px] font-mono text-[#c4a06a]">{v.codigo}</p>
                 </div>
                 <Button 
                   size="sm" 

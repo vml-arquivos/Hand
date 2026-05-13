@@ -169,7 +169,7 @@ export async function listVendedores(rifaId: number) {
   return await db.select().from(vendedores).where(eq(vendedores.rifaId, rifaId)).orderBy(asc(vendedores.nome));
 }
 
-export async function upsertVendedores(rifaId: number, inputs: { nome: string; codigo: string }[]) {
+export async function upsertVendedores(rifaId: number, inputs: { nome: string; professor?: string; turma?: string; codigo: string }[]) {
   const db = requireDbSync(await getDb());
   return await db.transaction(async (tx) => {
     const results = [];
@@ -177,11 +177,18 @@ export async function upsertVendedores(rifaId: number, inputs: { nome: string; c
       const [vendedor] = await tx.insert(vendedores).values({
         rifaId,
         nome: input.nome,
+        professor: input.professor || null,
+        turma: input.turma || null,
         codigo: input.codigo,
         updatedAt: new Date(),
       }).onConflictDoUpdate({
         target: [vendedores.rifaId, vendedores.codigo],
-        set: { nome: input.nome, updatedAt: new Date() },
+        set: { 
+          nome: input.nome, 
+          professor: input.professor || null,
+          turma: input.turma || null,
+          updatedAt: new Date() 
+        },
       }).returning();
       results.push(vendedor);
     }
@@ -200,6 +207,8 @@ export async function getRankingVendedores(rifaId: number) {
   const rows = await db.select({
     vendedorId: pedidos.vendedorId,
     nome: vendedores.nome,
+    professor: vendedores.professor,
+    turma: vendedores.turma,
     codigo: vendedores.codigo,
     totalBilhetes: sum(pedidos.quantidade),
     totalValor: sum(pedidos.valorTotal),
@@ -208,7 +217,7 @@ export async function getRankingVendedores(rifaId: number) {
   .from(pedidos)
   .innerJoin(vendedores, eq(pedidos.vendedorId, vendedores.id))
   .where(and(eq(pedidos.rifaId, rifaId), eq(pedidos.status, "confirmado")))
-  .groupBy(pedidos.vendedorId, vendedores.nome, vendedores.codigo)
+  .groupBy(pedidos.vendedorId, vendedores.nome, vendedores.professor, vendedores.turma, vendedores.codigo)
   .orderBy(desc(sum(pedidos.quantidade)));
   
   return rows.map(r => ({
