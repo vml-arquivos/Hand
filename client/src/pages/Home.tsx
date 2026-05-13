@@ -182,7 +182,8 @@ function RifaPage({ slug }: { slug: string }) {
     { rifaId: rifa?.id!, codigo: vendedorCodigo! },
     { 
       enabled: !!rifa?.id && !!vendedorCodigo,
-      onSuccess: (data) => data && setVendedorData(data)
+      // @ts-ignore - Suporte a dados estendidos do vendedor
+      onSuccess: (data: any) => data && setVendedorData(data)
     }
   );
 
