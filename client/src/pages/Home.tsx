@@ -177,15 +177,14 @@ function RifaPage({ slug }: { slug: string }) {
   const [vendedorCodigo, setVendedorCodigo] = useState<string | null>(null);
   const [vendedorData, setVendedorData] = useState<{ nome: string; professor?: string | null; turma?: string | null } | null>(null);
   
-  // Busca dados do vendedor se houver código
-  trpc.admin.getVendedorByCodigo.useQuery(
+  // Busca dados do vendedor se houver código (rota pública — não requer autenticação)
+  const { data: vendedorQueryData } = trpc.rifa.getVendedorByCodigo.useQuery(
     { rifaId: rifa?.id!, codigo: vendedorCodigo! },
-    { 
-      enabled: !!rifa?.id && !!vendedorCodigo,
-      // @ts-ignore - Suporte a dados estendidos do vendedor
-      onSuccess: (data: any) => data && setVendedorData(data)
-    }
+    { enabled: !!rifa?.id && !!vendedorCodigo }
   );
+  useEffect(() => {
+    if (vendedorQueryData) setVendedorData(vendedorQueryData);
+  }, [vendedorQueryData]);
 
   const criarPedido = trpc.rifa.criarPedido.useMutation();
   const [quantidade, setQuantidade] = useState(1);
@@ -389,8 +388,8 @@ function RifaPage({ slug }: { slug: string }) {
                   <Badge variant="secondary">Encerrada</Badge>
                 )}
               </div>
-              {vendedorData ? (
-                <div key="vendedor-info" className="mb-3 flex flex-col gap-1 rounded-lg bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 border border-amber-100">
+              {vendedorData && (
+                <div className="mb-3 flex flex-col gap-1 rounded-lg bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 border border-amber-100">
                   <div className="flex items-center gap-2">
                     <Sparkles className="h-4 w-4 text-amber-500" />
                     Você está comprando com o aluno: <span className="font-bold">{vendedorData.nome}</span>
@@ -401,7 +400,7 @@ function RifaPage({ slug }: { slug: string }) {
                     </p>
                   )}
                 </div>
-              ) : <div key="vendedor-empty" />}
+              )}
               <p className="leading-relaxed text-[#5b3a1c]">{rifa.descricao}</p>
             </div>
 
