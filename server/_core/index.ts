@@ -89,7 +89,10 @@ async function startServer() {
       const titulo = (rifa.nome ?? "")
         .replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
       const preco = parseFloat(String(rifa.precoBilhete)).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-      const rifaUrl = `${siteUrl}/rifa/${rifa.slug}`;
+      // Preserva o parâmetro ?v= do vendedor na og:url para que links compartilhados
+      // no WhatsApp mantenham o rastreamento ao ser clicados
+      const vendedorParam = req.query.v ? `?v=${req.query.v}` : "";
+      const rifaUrl = `${siteUrl}/rifa/${rifa.slug}${vendedorParam}`;
 
       // Meta tags OG completas — compatíveis com WhatsApp, Telegram, Facebook, Twitter
       const ogMeta = `
