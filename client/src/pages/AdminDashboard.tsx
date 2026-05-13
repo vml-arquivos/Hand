@@ -33,6 +33,7 @@ import {
   UploadCloud,
   Users,
   UserPlus,
+  X,
   UserX,
   UserCheck,
   Eye,
@@ -198,7 +199,7 @@ function ImageUpload({
 }
 
 // ─── Formulário de Rifa ───────────────────────────────────────────────────────
-function RifaForm({ rifa, onSaved }: { rifa?: RifaRow | null; onSaved: () => void }) {
+function RifaForm({ rifa, onSaved, onCancel }: { rifa?: RifaRow | null; onSaved: () => void; onCancel?: () => void }) {
   const isEdit = !!rifa?.id;
   const [form, setForm] = useState({
     slug: rifa?.slug ?? "",
@@ -628,18 +629,30 @@ function RifaForm({ rifa, onSaved }: { rifa?: RifaRow | null; onSaved: () => voi
         </div>
       </div>
 
-      <Button
-        type="submit"
-        className="h-12 w-full bg-[#2b2116] text-base font-semibold text-white hover:bg-[#3d2e1e]"
-        disabled={salvarRifa.isPending}
-      >
-        {salvarRifa.isPending ? (
-          <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-        ) : (
-          <Settings className="mr-2 h-5 w-5" />
+      <div className="flex gap-3">
+        <Button
+          type="submit"
+          className="h-12 flex-1 bg-[#2b2116] text-base font-semibold text-white hover:bg-[#3d2e1e]"
+          disabled={salvarRifa.isPending}
+        >
+          {salvarRifa.isPending ? (
+            <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+          ) : (
+            <Settings className="mr-2 h-5 w-5" />
+          )}
+          {isEdit ? "Salvar alterações" : "Criar rifa"}
+        </Button>
+        {onCancel && (
+          <Button
+            type="button"
+            variant="outline"
+            className="h-12 border-[#d5b078] text-[#5b3a1c] hover:bg-[#f4dfbc]"
+            onClick={onCancel}
+          >
+            Cancelar
+          </Button>
         )}
-        {isEdit ? "Salvar alterações" : "Criar rifa"}
-      </Button>
+      </div>
     </form>
   );
 }
@@ -768,7 +781,11 @@ export default function AdminDashboard() {
   const adminName = me.data?.name ?? "";
   const [editingRifa, setEditingRifa] = useState<RifaRow | null>(null);
   const [selectedRifaId, setSelectedRifaId] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState("pedidos");
+  const [activeTab, setActiveTab] = useState(() => {
+    // Começa na aba Rifas se não há dados ainda (primeiro acesso / conta nova)
+    // Após o dashboard carregar, o useEffect abaixo pode ajustar se necessário
+    return "rifas";
+  });
 
   // Auto-seleciona a primeira rifa quando os dados carregam
   useEffect(() => {
@@ -776,7 +793,12 @@ export default function AdminDashboard() {
     if (rifas && rifas.length > 0 && !selectedRifaId) {
       setSelectedRifaId(rifas[0].id);
     }
-  }, [dashboard.data?.rifas, selectedRifaId]);
+    // Se há pedidos pendentes, muda para aba pedidos automaticamente
+    const pedidos = dashboard.data?.pedidos;
+    if (pedidos && pedidos.length > 0) {
+      setActiveTab("pedidos");
+    }
+  }, [dashboard.data?.rifas, dashboard.data?.pedidos, selectedRifaId]);
   const [editingPremio, setEditingPremio] = useState<PremioRow | null | undefined>(undefined);
   const [showPremioForm, setShowPremioForm] = useState(false);
 
@@ -1065,17 +1087,28 @@ export default function AdminDashboard() {
             {editingRifa !== null && (
               <Card className="border-[#ecdcc5] bg-white shadow-sm">
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-lg">
-                    {editingRifa?.id ? `Editando: ${editingRifa.nome}` : "Nova rifa"}
-                  </CardTitle>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg">
+                      {editingRifa?.id ? `Editando: ${editingRifa.nome}` : "Nova rifa"}
+                    </CardTitle>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setEditingRifa(null)}
+                      className="h-8 w-8 p-0 text-[#9b6b35] hover:text-[#2b2116]"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <RifaForm
                     rifa={editingRifa}
-    onSaved={() => {
-      setEditingRifa(null);
-      utils.admin.dashboard.invalidate();
-    }}
+                    onSaved={() => {
+                      setEditingRifa(null);
+                      utils.admin.dashboard.invalidate();
+                    }}
+                    onCancel={() => setEditingRifa(null)}
                   />
                 </CardContent>
               </Card>
@@ -1087,7 +1120,22 @@ export default function AdminDashboard() {
                 <Button
                   size="sm"
                   className="bg-[#2b2116] text-white hover:bg-[#3d2e1e]"
-                  onClick={() => setEditingRifa(null)}
+                  onClick={() => {
+                    setEditingRifa({
+                      id: 0,
+                      slug: "",
+                      nome: "",
+                      descricao: "",
+                      totalBilhetes: 500,
+                      precoBilhete: "10.00",
+                      pixChave: "",
+                      pixCopiaCola: "",
+                      ativa: true,
+                      rastreamentoVendedores: false,
+                    });
+                    setActiveTab("rifas");
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
                 >
                   <Plus className="mr-1.5 h-4 w-4" />
                   Nova rifa
@@ -1803,9 +1851,15 @@ function VendedoresTab({ rifas }: { rifas: any[] }) {
         nome = parts[0];
       }
 
-      const slug = nome.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-").slice(0, 15);
-      const rand = Math.floor(100 + Math.random() * 900);
-      return { nome, professor, turma, codigo: `${slug}-${rand}` };
+      // Código determinístico baseado no nome — reimportar a mesma lista
+      // sempre gera o mesmo código, garantindo upsert correto sem duplicatas
+      const slug = nome.toLowerCase().normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9]/g, "-")
+        .replace(/-+/g, "-")
+        .replace(/^-|-$/g, "")
+        .slice(0, 25);
+      return { nome, professor, turma, codigo: slug };
     });
     
     importar.mutate({ rifaId: selectedRifaId, vendedores: data });
@@ -1824,9 +1878,12 @@ function VendedoresTab({ rifas }: { rifas: any[] }) {
           className="h-11 w-full rounded-xl border border-[#d5b078] bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#a06a31]"
         >
           <option value="">Selecione uma rifa...</option>
-          {rifas.map((r) => (
-            <option key={r.id} value={r.id}>{r.nome}</option>
+          {rifas.filter(r => r.rastreamentoVendedores).map((r) => (
+            <option key={r.id} value={r.id}>{r.nome} ✓</option>
           ))}
+          {!rifas.some(r => r.rastreamentoVendedores) && (
+            <option disabled value="">Nenhuma rifa com rastreamento ativado</option>
+          )}
         </select>
       </div>
 
@@ -1840,9 +1897,35 @@ function VendedoresTab({ rifas }: { rifas: any[] }) {
                   <Trophy className="h-5 w-5 text-amber-500" />
                   Ranking de Vendas
                 </CardTitle>
-                <Button variant="ghost" size="sm" onClick={() => utils.admin.rankingVendedores.invalidate({ rifaId: selectedRifaId })}>
-                  <RefreshCw className="h-4 w-4" />
-                </Button>
+                <div className="flex gap-2">
+                  {ranking && ranking.length > 0 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="border-[#d5b078] text-[#5b3a1c] hover:bg-[#f4dfbc]"
+                      onClick={() => {
+                        const csv = [
+                          "Posição;Aluno;Professor;Turma;Bilhetes;Valor Total;Pedidos",
+                          ...ranking.map((r, i) =>
+                            `${i + 1};${r.nome};${r.professor ?? ""};${r.turma ?? ""};${r.totalBilhetes};${r.totalValor};${r.totalPedidos}`
+                          )
+                        ].join("\n");
+                        const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = `ranking-alunos-rifa-${selectedRifaId}.csv`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      }}
+                    >
+                      <Download className="mr-1 h-3.5 w-3.5" /> CSV
+                    </Button>
+                  )}
+                  <Button variant="ghost" size="sm" onClick={() => utils.admin.rankingVendedores.invalidate({ rifaId: selectedRifaId })}>
+                    <RefreshCw className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
