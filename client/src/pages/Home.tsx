@@ -174,6 +174,18 @@ function RifaCard({ rifa }: { rifa: RifaListItem }) {
 function RifaPage({ slug }: { slug: string }) {
   const [, navigate] = useLocation();
   const { data: rifa, isLoading, error } = trpc.rifa.public.useQuery({ slug });
+  const [vendedorCodigo, setVendedorCodigo] = useState<string | null>(null);
+  const [vendedorNome, setVendedorNome] = useState<string | null>(null);
+  
+  // Busca nome do vendedor se houver código
+  trpc.admin.getVendedorByCodigo.useQuery(
+    { rifaId: rifa?.id!, codigo: vendedorCodigo! },
+    { 
+      enabled: !!rifa?.id && !!vendedorCodigo,
+      onSuccess: (data) => data && setVendedorNome(data.nome)
+    }
+  );
+
   const criarPedido = trpc.rifa.criarPedido.useMutation();
   const [quantidade, setQuantidade] = useState(1);
   const [form, setForm] = useState({ nome: "", telefone: "", email: "" });
@@ -206,10 +218,21 @@ function RifaPage({ slug }: { slug: string }) {
         const p = JSON.parse(pedidoSalvo) as { codigo: string; nome: string };
         setUltimoPedido(p);
       }
+      
+      // Captura vendedor da URL
+      const params = new URLSearchParams(window.location.search);
+      const v = params.get("v");
+      if (v) {
+        setVendedorCodigo(v);
+        localStorage.setItem(`rifa_vendedor_${slug}`, v);
+      } else {
+        const savedV = localStorage.getItem(`rifa_vendedor_${slug}`);
+        if (savedV) setVendedorCodigo(savedV);
+      }
     } catch {
       localStorage.removeItem(DONOR_KEY);
     }
-  }, []);
+  }, [slug]);
 
   useEffect(() => {
     if (rifa) setQuantidade((p) => Math.max(1, Math.min(p, maxQtd)));
@@ -244,6 +267,7 @@ function RifaPage({ slug }: { slug: string }) {
         nome: form.nome.trim(),
         telefone: form.telefone.trim(),
         email: form.email.trim() || undefined,
+        vendedorCodigo: vendedorCodigo || undefined,
       });
       localStorage.setItem(DONOR_KEY, JSON.stringify({ nome: form.nome.trim(), telefone: form.telefone.trim() }));
       const codigo = (pedido as { codigo?: string; pedido?: { codigo?: string } })?.codigo
@@ -364,6 +388,12 @@ function RifaPage({ slug }: { slug: string }) {
                   <Badge variant="secondary">Encerrada</Badge>
                 )}
               </div>
+              {vendedorNome && (
+                <div className="mb-3 flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 border border-amber-100">
+                  <Sparkles className="h-4 w-4 text-amber-500" />
+                  Você está comprando com o aluno: <span className="font-bold">{vendedorNome}</span>
+                </div>
+              )}
               <p className="leading-relaxed text-[#5b3a1c]">{rifa.descricao}</p>
             </div>
 

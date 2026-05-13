@@ -45,9 +45,22 @@ export const rifas = pgTable("rifas", {
   pixChave: varchar("pixChave", { length: 255 }).notNull(),
   pixCopiaCola: text("pixCopiaCola").notNull(),
   ativa: boolean("ativa").default(true).notNull(),
+  rastreamentoVendedores: boolean("rastreamento_vendedores").default(false).notNull(),
   createdAt: timestamp("createdAt", { mode: "date" }).defaultNow().notNull(),
   updatedAt: timestamp("updatedAt", { mode: "date" }).defaultNow().notNull(),
 });
+
+export const vendedores = pgTable("vendedores", {
+  id: serial("id").primaryKey(),
+  rifaId: integer("rifa_id").notNull().references(() => rifas.id, { onDelete: "cascade" }),
+  nome: varchar("nome", { length: 180 }).notNull(),
+  codigo: varchar("codigo", { length: 50 }).notNull(),
+  ativo: boolean("ativo").default(true).notNull(),
+  createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+}, (table) => ({
+  rifaCodigoUnique: uniqueIndex("vendedores_rifa_codigo_unique").on(table.rifaId, table.codigo),
+}));
 
 export const premios = pgTable("premios", {
   id: serial("id").primaryKey(),
@@ -77,6 +90,7 @@ export const pedidos = pgTable("pedidos", {
   compradorId: integer("compradorId").notNull().references(() => compradores.id),
   quantidade: integer("quantidade").notNull(),
   valorTotal: decimal("valorTotal", { precision: 10, scale: 2 }).notNull().$type<string>(),
+  vendedorId: integer("vendedor_id").references(() => vendedores.id, { onDelete: "set null" }),
   status: orderStatusEnum("status").default("pendente").notNull(),
   comprovanteUrl: text("comprovante_url"),
   observacaoAdmin: text("observacao_admin"),
@@ -128,7 +142,13 @@ export const rifasRelations = relations(rifas, ({ one, many }) => ({
   pedidos: many(pedidos), 
   bilhetes: many(bilhetes),
   premios: many(premios),
-  assets: many(rifaAssets)
+  assets: many(rifaAssets),
+  vendedores: many(vendedores)
+}));
+
+export const vendedoresRelations = relations(vendedores, ({ one, many }) => ({
+  rifa: one(rifas, { fields: [vendedores.rifaId], references: [rifas.id] }),
+  pedidos: many(pedidos)
 }));
 
 export const adminUsersRelations = relations(adminUsers, ({ many }) => ({
@@ -151,6 +171,7 @@ export const compradoresRelations = relations(compradores, ({ many }) => ({
 export const pedidosRelations = relations(pedidos, ({ one, many }) => ({
   rifa: one(rifas, { fields: [pedidos.rifaId], references: [rifas.id] }),
   comprador: one(compradores, { fields: [pedidos.compradorId], references: [compradores.id] }),
+  vendedor: one(vendedores, { fields: [pedidos.vendedorId], references: [vendedores.id] }),
   confirmadoPor: one(adminUsers, { fields: [pedidos.confirmadoPorUserId], references: [adminUsers.id], relationName: "confirmadoPor" }),
   canceladoPor: one(adminUsers, { fields: [pedidos.canceladoPorUserId], references: [adminUsers.id], relationName: "canceladoPor" }),
   bilhetes: many(bilhetes),
@@ -185,5 +206,7 @@ export type Pedido = typeof pedidos.$inferSelect;
 export type Bilhete = typeof bilhetes.$inferSelect;
 export type RifaAsset = typeof rifaAssets.$inferSelect;
 export type AuditLog = typeof auditLogs.$inferSelect;
+export type Vendedor = typeof vendedores.$inferSelect;
+export type InsertVendedor = typeof vendedores.$inferInsert;
 export type OrderStatus = "pendente" | "confirmado" | "cancelado";
 export type AdminRole = "super_admin" | "admin" | "operador";

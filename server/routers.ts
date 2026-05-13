@@ -7,7 +7,13 @@ import * as db from "./db";
 import { storagePut } from "./storage";
 import { gerarPixCopiaCola } from "./pix";
 
-const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || "troque_este_segredo_jwt_com_mais_de_32_caracteres");
+const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET);
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
+  console.error("ERRO CRÍTICO: JWT_SECRET não configurado ou muito curto (mínimo 32 caracteres).");
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("JWT_SECRET deve ser configurado em produção.");
+  }
+}
 
 /**
  * Sanitiza e converte o valor do preço do bilhete para número.
@@ -114,11 +120,12 @@ export const appRouter = router({
           telefone: z.string().min(8, "Informe um WhatsApp válido."),
           email: z.string().email().optional().or(z.literal("")),
           comprovanteUrl: z.string().optional(),
+          vendedorCodigo: z.string().optional().or(z.literal("")),
         }),
       )
       .mutation(async ({ input }) => {
         try {
-          return await db.createPedido({ ...input, email: input.email || null });
+          return await db.createPedido({ ...input, email: input.email || null, vendedorCodigo: input.vendedorCodigo || null });
         } catch (error) {
           throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Erro ao criar pedido." });
         }
@@ -201,6 +208,7 @@ export const appRouter = router({
           nomeRecebedor: z.string().optional().or(z.literal("")),
           cidadeRecebedor: z.string().optional().or(z.literal("")),
           ativa: z.boolean(),
+          rastreamentoVendedores: z.boolean().default(false),
         }),
       )
       .mutation(async ({ input, ctx }) => {
@@ -277,6 +285,35 @@ export const appRouter = router({
       await db.createAuditLog({ adminUserId: ctx.admin.id, action: "delete_premio", entityType: "premio", entityId: input.id });
       return { success: true };
     }),
+
+    // --- VENDEDORES (ALUNOS) ---
+    listVendedores: adminProcedure.input(z.object({ rifaId: z.number() })).query(async ({ input }) => {
+      return db.listVendedores(input.rifaId);
+    }),
+    importarVendedores: adminProcedure
+      .input(z.object({
+        rifaId: z.number(),
+        vendedores: z.array(z.object({ nome: z.string(), codigo: z.string() })),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const result = await db.upsertVendedores(input.rifaId, input.vendedores);
+        await db.createAuditLog({
+          adminUserId: ctx.admin.id,
+          action: "import_vendedores",
+          entityType: "rifa",
+          entityId: input.rifaId,
+          details: { count: result.length },
+        });
+        return result;
+      }),
+    rankingVendedores: adminProcedure.input(z.object({ rifaId: z.number() })).query(async ({ input }) => {
+      return db.getRankingVendedores(input.rifaId);
+    }),
+    getVendedorByCodigo: publicProcedure
+      .input(z.object({ rifaId: z.number(), codigo: z.string() }))
+      .query(async ({ input }) => {
+        return db.getVendedorByCodigo(input.rifaId, input.codigo);
+      }),
 
     confirmarPedido: adminProcedure.input(z.object({ pedidoId: z.number().int().positive() })).mutation(async ({ input, ctx }) => {
       const result = await db.confirmarPedido(input.pedidoId, ctx.admin.id);

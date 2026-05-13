@@ -62,6 +62,7 @@ type RifaRow = {
   pixChave: string;
   pixCopiaCola: string;
   ativa: boolean;
+  rastreamentoVendedores: boolean;
 };
 
 type PremioRow = {
@@ -214,6 +215,7 @@ function RifaForm({ rifa, onSaved }: { rifa?: RifaRow | null; onSaved: () => voi
     nomeRecebedor: "",
     cidadeRecebedor: "",
     ativa: rifa?.ativa ?? true,
+    rastreamentoVendedores: rifa?.rastreamentoVendedores ?? false,
   });
 
   const [qrPreview, setQrPreview] = useState("");
@@ -307,6 +309,7 @@ function RifaForm({ rifa, onSaved }: { rifa?: RifaRow | null; onSaved: () => voi
       nomeRecebedor: form.nomeRecebedor.trim() || undefined,
       cidadeRecebedor: form.cidadeRecebedor.trim() || undefined,
       ativa: form.ativa,
+      rastreamentoVendedores: form.rastreamentoVendedores,
     });
   }
 
@@ -408,6 +411,21 @@ function RifaForm({ rifa, onSaved }: { rifa?: RifaRow | null; onSaved: () => voi
               inputMode="decimal"
             />
             <p className="text-xs text-muted-foreground">Use vírgula decimal. Ex: 10,00 ou 25,50</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 rounded-xl border border-[#e6d8c1] bg-white p-4">
+          <Switch
+            id="rastreamentoVendedores"
+            checked={form.rastreamentoVendedores}
+            onCheckedChange={(v) => handleChange("rastreamentoVendedores", v)}
+          />
+          <div className="space-y-0.5">
+            <Label htmlFor="rastreamentoVendedores" className="text-sm font-bold">
+              Rastreamento por Aluno/Vendedor
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              Ative para gerar links exclusivos e acompanhar o ranking de vendas por aluno.
+            </p>
           </div>
         </div>
       </div>
@@ -911,6 +929,12 @@ export default function AdminDashboard() {
               <ListOrdered className="mr-1.5 h-4 w-4" />
               Bilhetes
             </TabsTrigger>
+            {rifas?.find(r => r.id === selectedRifaId)?.rastreamentoVendedores && (
+              <TabsTrigger value="vendedores" className="flex-1 text-xs sm:text-sm">
+                <Users className="mr-1.5 h-4 w-4" />
+                Alunos
+              </TabsTrigger>
+            )}
             {adminRole === "super_admin" && (
               <TabsTrigger value="usuarios" className="flex-1 text-xs sm:text-sm">
                 <Users className="mr-1.5 h-4 w-4" />
@@ -1265,6 +1289,11 @@ export default function AdminDashboard() {
           <TabsContent value="bilhetes">
             <BilhetesTab rifas={rifas ?? []} />
           </TabsContent>
+          {rifas?.find(r => r.id === selectedRifaId)?.rastreamentoVendedores && (
+            <TabsContent value="vendedores">
+              <VendedoresTab rifa={rifas.find(r => r.id === selectedRifaId) as any} />
+            </TabsContent>
+          )}
           {adminRole === "super_admin" && (
             <TabsContent value="usuarios">
               <UsuariosTab />
@@ -1718,6 +1747,158 @@ function UsuariosTab() {
           <li><span className="font-medium text-blue-700">Administrador</span> — gerencia apenas as rifas criadas por ele</li>
           <li><span className="font-medium text-gray-700">Operador</span> — confirma/cancela pedidos das rifas do seu admin</li>
         </ul>
+      </div>
+    </div>
+  );
+}
+
+// ─── Aba de Vendedores (Alunos) ──────────────────────────────────────────────
+function VendedoresTab({ rifa }: { rifa: RifaRow }) {
+  const [importing, setImporting] = useState(false);
+  const [rawText, setRawText] = useState("");
+  const utils = trpc.useUtils();
+  
+  const { data: vendedores, isLoading: loadingVendedores } = trpc.admin.listVendedores.useQuery({ rifaId: rifa.id });
+  const { data: ranking, isLoading: loadingRanking } = trpc.admin.rankingVendedores.useQuery({ rifaId: rifa.id });
+  
+  const importar = trpc.admin.importarVendedores.useMutation({
+    onSuccess: () => {
+      toast.success("Alunos importados com sucesso!");
+      setImporting(false);
+      setRawText("");
+      utils.admin.listVendedores.invalidate({ rifaId: rifa.id });
+    },
+    onError: (err) => toast.error("Erro ao importar: " + err.message),
+  });
+
+  function handleImport() {
+    const lines = rawText.split("\n").filter(l => l.trim().length > 0);
+    if (lines.length === 0) {
+      toast.error("Cole os nomes dos alunos, um por linha.");
+      return;
+    }
+    
+    const data = lines.map(nome => {
+      const n = nome.trim();
+      // Gera um código simples: slug do nome + 3 dígitos aleatórios
+      const slug = n.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-").slice(0, 15);
+      const rand = Math.floor(100 + Math.random() * 900);
+      return { nome: n, codigo: `${slug}-${rand}` };
+    });
+    
+    importar.mutate({ rifaId: rifa.id, vendedores: data });
+  }
+
+  const siteUrl = window.location.origin;
+
+  return (
+    <div className="space-y-8">
+      {/* Ranking */}
+      <Card className="border-[#e6d8c1] bg-white shadow-sm">
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2 text-lg font-bold text-[#2b2116]">
+              <Trophy className="h-5 w-5 text-amber-500" />
+              Ranking de Vendas
+            </CardTitle>
+            <Button variant="ghost" size="sm" onClick={() => utils.admin.rankingVendedores.invalidate({ rifaId: rifa.id })}>
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {loadingRanking ? (
+            <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-[#a06a31]" /></div>
+          ) : !ranking?.length ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">Nenhuma venda confirmada vinculada a alunos ainda.</div>
+          ) : (
+            <div className="space-y-3">
+              {ranking.map((r, idx) => (
+                <div key={r.vendedorId} className="flex items-center justify-between rounded-xl border border-[#ecdcc5] bg-[#fffaf2] p-3">
+                  <div className="flex items-center gap-3">
+                    <div className={`flex h-8 w-8 items-center justify-center rounded-full font-bold text-white ${idx === 0 ? 'bg-amber-500' : idx === 1 ? 'bg-slate-400' : idx === 2 ? 'bg-amber-700' : 'bg-[#2b2116]'}`}>
+                      {idx + 1}
+                    </div>
+                    <div>
+                      <p className="font-bold text-[#1a0f06]">{r.nome}</p>
+                      <p className="text-xs text-[#9b6b35]">{r.totalPedidos} pedido(s)</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-bold text-[#1a0f06]">{r.totalBilhetes} bilhetes</p>
+                    <p className="text-xs text-[#9b6b35]">{moeda.format(parseFloat(r.totalValor))}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Gestão de Alunos */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-[#9b6b35]">Alunos Cadastrados</h3>
+          <Button size="sm" onClick={() => setImporting(true)} className="bg-[#2b2116] text-white hover:bg-[#3d2e1e]">
+            <Plus className="mr-1.5 h-4 w-4" /> Importar Lista
+          </Button>
+        </div>
+
+        {importing && (
+          <Card className="border-amber-200 bg-amber-50">
+            <CardContent className="p-4 space-y-4">
+              <div className="space-y-1.5">
+                <Label>Cole os nomes dos alunos (um por linha)</Label>
+                <Textarea 
+                  value={rawText} 
+                  onChange={(e) => setRawText(e.target.value)} 
+                  placeholder="João Silva\nMaria Oliveira\n..." 
+                  rows={5}
+                  className="bg-white"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button onClick={handleImport} disabled={importar.isPending} className="bg-[#2b2116] text-white">
+                  {importar.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Confirmar Importação
+                </Button>
+                <Button variant="ghost" onClick={() => setImporting(false)}>Cancelar</Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {loadingVendedores ? (
+          <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-[#a06a31]" /></div>
+        ) : !vendedores?.length ? (
+          <div className="rounded-2xl border border-dashed border-[#d5b078] bg-white py-12 text-center">
+            <Users className="mx-auto mb-3 h-10 w-10 text-[#d5b078]" />
+            <p className="text-[#9b6b35]">Nenhum aluno cadastrado para esta rifa.</p>
+          </div>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {vendedores.map((v) => (
+              <div key={v.id} className="flex items-center justify-between rounded-xl border border-[#ecdcc5] bg-white p-3 shadow-sm">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-semibold text-[#1a0f06]">{v.nome}</p>
+                  <p className="text-[10px] font-mono text-[#9b6b35]">{v.codigo}</p>
+                </div>
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  className="ml-2 h-8 border-[#d5b078] text-[#5b3a1c] hover:bg-[#f4dfbc]"
+                  onClick={() => {
+                    const link = `${siteUrl}/rifa/${rifa.slug}?v=${v.codigo}`;
+                    navigator.clipboard.writeText(link);
+                    toast.success("Link copiado para " + v.nome);
+                  }}
+                >
+                  <Copy className="mr-1 h-3.5 w-3.5" /> Link
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

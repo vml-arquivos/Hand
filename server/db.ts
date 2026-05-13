@@ -3,9 +3,9 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import bcrypt from "bcryptjs";
 import { 
-  bilhetes, compradores, InsertRifa, InsertUser, pedidos, rifas, users, 
-  adminUsers, auditLogs, premios, rifaAssets,
-  type OrderStatus, type AdminUser, type InsertAdminUser, type InsertPremio
+  bilhetes, compradores,   InsertRifa, InsertUser, pedidos, rifas, users, 
+  adminUsers, auditLogs, premios, rifaAssets, vendedores,
+  type OrderStatus, type AdminUser, type InsertAdminUser, type InsertPremio, type InsertVendedor
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -162,6 +162,63 @@ export async function getPublicRifa(slug = "rifa-beneficente") {
   };
 }
 
+// --- VENDEDORES (ALUNOS) ---
+
+export async function listVendedores(rifaId: number) {
+  const db = requireDbSync(await getDb());
+  return await db.select().from(vendedores).where(eq(vendedores.rifaId, rifaId)).orderBy(asc(vendedores.nome));
+}
+
+export async function upsertVendedores(rifaId: number, inputs: { nome: string; codigo: string }[]) {
+  const db = requireDbSync(await getDb());
+  return await db.transaction(async (tx) => {
+    const results = [];
+    for (const input of inputs) {
+      const [vendedor] = await tx.insert(vendedores).values({
+        rifaId,
+        nome: input.nome,
+        codigo: input.codigo,
+        updatedAt: new Date(),
+      }).onConflictDoUpdate({
+        target: [vendedores.rifaId, vendedores.codigo],
+        set: { nome: input.nome, updatedAt: new Date() },
+      }).returning();
+      results.push(vendedor);
+    }
+    return results;
+  });
+}
+
+export async function getVendedorByCodigo(rifaId: number, codigo: string) {
+  const db = requireDbSync(await getDb());
+  const [vendedor] = await db.select().from(vendedores).where(and(eq(vendedores.rifaId, rifaId), eq(vendedores.codigo, codigo))).limit(1);
+  return vendedor;
+}
+
+export async function getRankingVendedores(rifaId: number) {
+  const db = requireDbSync(await getDb());
+  const rows = await db.select({
+    vendedorId: pedidos.vendedorId,
+    nome: vendedores.nome,
+    codigo: vendedores.codigo,
+    totalBilhetes: sum(pedidos.quantidade),
+    totalValor: sum(pedidos.valorTotal),
+    totalPedidos: count(pedidos.id),
+  })
+  .from(pedidos)
+  .innerJoin(vendedores, eq(pedidos.vendedorId, vendedores.id))
+  .where(and(eq(pedidos.rifaId, rifaId), eq(pedidos.status, "confirmado")))
+  .groupBy(pedidos.vendedorId, vendedores.nome, vendedores.codigo)
+  .orderBy(desc(sum(pedidos.quantidade)));
+  
+  return rows.map(r => ({
+    ...r,
+    totalBilhetes: Number(r.totalBilhetes || 0),
+    totalValor: parseFloat(String(r.totalValor || 0)).toFixed(2),
+    totalPedidos: Number(r.totalPedidos || 0),
+  }));
+}
+
 export async function listAllRifas() {
   const db = requireDbSync(await getDb());
   const rows = await db.select().from(rifas).orderBy(desc(rifas.createdAt));
@@ -257,6 +314,7 @@ export async function createPedido(input: {
   telefone: string; 
   email?: string | null;
   comprovanteUrl?: string | null;
+  vendedorCodigo?: string | null;
 }) {
   const db = requireDbSync(await getDb());
   const [rifa] = await db.select().from(rifas).where(eq(rifas.id, input.rifaId)).limit(1);
@@ -275,10 +333,17 @@ export async function createPedido(input: {
     updatedAt: new Date(),
   }).returning();
   
+  let vendedorId = null;
+  if (input.vendedorCodigo) {
+    const vendedor = await getVendedorByCodigo(rifa.id, input.vendedorCodigo);
+    if (vendedor) vendedorId = vendedor.id;
+  }
+
   const [pedido] = await db.insert(pedidos).values({
     codigo: gerarCodigoPedido(),
     rifaId: rifa.id,
     compradorId: comprador.id,
+    vendedorId,
     quantidade: input.quantidade,
     valorTotal,
     status: "pendente",
@@ -291,10 +356,16 @@ export async function createPedido(input: {
 
 export async function getPedidoDetalhado(codigo: string) {
   const db = requireDbSync(await getDb());
-  const rows = await db.select({ pedido: pedidos, comprador: compradores, rifa: rifas })
+  const rows = await db.select({ 
+    pedido: pedidos, 
+    comprador: compradores, 
+    rifa: rifas,
+    vendedor: vendedores
+  })
     .from(pedidos)
     .innerJoin(compradores, eq(pedidos.compradorId, compradores.id))
     .innerJoin(rifas, eq(pedidos.rifaId, rifas.id))
+    .leftJoin(vendedores, eq(pedidos.vendedorId, vendedores.id))
     .where(eq(pedidos.codigo, codigo))
     .limit(1);
   const row = rows[0];
