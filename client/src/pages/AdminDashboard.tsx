@@ -1807,9 +1807,9 @@ function VendedoresTab({ rifas }: { rifas: any[] }) {
   const [importing, setImporting] = useState(false);
   const [rawText, setRawText] = useState("");
   const utils = trpc.useUtils();
-  
+
   const selectedRifa = rifas.find(r => r.id === selectedRifaId);
-  
+
   const { data: vendedores, isLoading: loadingVendedores } = trpc.admin.listVendedores.useQuery(
     { rifaId: selectedRifaId! },
     { enabled: !!selectedRifaId }
@@ -1818,7 +1818,7 @@ function VendedoresTab({ rifas }: { rifas: any[] }) {
     { rifaId: selectedRifaId! },
     { enabled: !!selectedRifaId }
   );
-  
+
   const importar = trpc.admin.importarVendedores.useMutation({
     onSuccess: () => {
       toast.success("Alunos importados com sucesso!");
@@ -1836,7 +1836,7 @@ function VendedoresTab({ rifas }: { rifas: any[] }) {
       toast.error("Cole os dados dos alunos (Professor;Turma;Aluno), um por linha.");
       return;
     }
-    
+
     const data = lines.map(line => {
       const parts = line.split(";").map(p => p.trim());
       let professor = "";
@@ -1851,8 +1851,6 @@ function VendedoresTab({ rifas }: { rifas: any[] }) {
         nome = parts[0];
       }
 
-      // Código determinístico baseado no nome — reimportar a mesma lista
-      // sempre gera o mesmo código, garantindo upsert correto sem duplicatas
       const slug = nome.toLowerCase().normalize("NFD")
         .replace(/[\u0300-\u036f]/g, "")
         .replace(/[^a-z0-9]/g, "-")
@@ -1861,11 +1859,127 @@ function VendedoresTab({ rifas }: { rifas: any[] }) {
         .slice(0, 25);
       return { nome, professor, turma, codigo: slug };
     });
-    
+
     importar.mutate({ rifaId: selectedRifaId, vendedores: data });
   }
 
   const siteUrl = window.location.origin;
+
+  // ── Agrupa alunos por turma ────────────────────────────────────────────────
+  const gruposPorTurma = (() => {
+    if (!vendedores?.length) return [];
+    const map = new Map<string, typeof vendedores>();
+    for (const v of vendedores) {
+      const key = v.turma?.trim() || "Sem turma";
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(v);
+    }
+    return Array.from(map.entries())
+      .sort(([a], [b]) => a.localeCompare(b, "pt-BR"))
+      .map(([turma, alunos]) => ({ turma, alunos }));
+  })();
+
+  // ── Copia todos os links de uma turma ─────────────────────────────────────
+  function copiarLinksTurma(turma: string, alunos: typeof vendedores) {
+    if (!alunos?.length || !selectedRifa) return;
+    const texto = alunos.map(v =>
+      `${v.nome}: ${siteUrl}/rifa/${selectedRifa.slug}?v=${v.codigo}`
+    ).join("\n");
+    navigator.clipboard.writeText(texto);
+    toast.success(`Links da turma "${turma}" copiados (${alunos.length} alunos)!`);
+  }
+
+  // ── Exporta CSV de uma turma ───────────────────────────────────────────────
+  function exportarCSVTurma(turma: string, alunos: typeof vendedores) {
+    if (!alunos?.length || !selectedRifa) return;
+    const header = "Aluno;Professor;Turma;Link";
+    const rows = alunos.map(v =>
+      `"${v.nome}";"${v.professor ?? ""}";"${v.turma ?? ""}";"${siteUrl}/rifa/${selectedRifa.slug}?v=${v.codigo}"`
+    );
+    const csv = [header, ...rows].join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const nomeTurma = turma.replace(/[^a-z0-9]/gi, "-").toLowerCase();
+    a.download = `alunos-turma-${nomeTurma}-rifa-${selectedRifaId}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // ── Gera página HTML da turma para o professor compartilhar ───────────────
+  function gerarHTMLTurma(turma: string, alunos: typeof vendedores) {
+    if (!alunos?.length || !selectedRifa) return;
+    const rifaNome = selectedRifa.nome;
+    const linhas = alunos.map(v => {
+      const link = `${siteUrl}/rifa/${selectedRifa.slug}?v=${v.codigo}`;
+      return `<tr>
+        <td>${v.nome}</td>
+        <td><a href="${link}" target="_blank">${link}</a></td>
+        <td><button onclick="navigator.clipboard.writeText('${link}');this.textContent='✓ Copiado!';setTimeout(()=>this.textContent='Copiar',2000)">Copiar</button></td>
+      </tr>`;
+    }).join("\n");
+
+    const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Links – ${turma} – ${rifaNome}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:system-ui,sans-serif;background:#f7f1e8;color:#1a0f06;padding:24px}
+    h1{font-size:1.3rem;margin-bottom:4px;color:#2b2116}
+    p.sub{font-size:.85rem;color:#9b6b35;margin-bottom:20px}
+    table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+    th{background:#2b2116;color:#fff;padding:10px 14px;text-align:left;font-size:.8rem;text-transform:uppercase;letter-spacing:.05em}
+    td{padding:10px 14px;border-bottom:1px solid #f0e8d8;font-size:.85rem;vertical-align:middle}
+    tr:last-child td{border-bottom:none}
+    a{color:#a06a31;word-break:break-all}
+    button{background:#a06a31;color:#fff;border:none;border-radius:6px;padding:5px 12px;cursor:pointer;font-size:.8rem;white-space:nowrap}
+    button:hover{background:#7f5525}
+    .topo{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:20px}
+    .copiar-todos{background:#2b2116;color:#fff;border:none;border-radius:8px;padding:8px 16px;cursor:pointer;font-size:.85rem}
+    .copiar-todos:hover{background:#3d2e1e}
+    @media(max-width:600px){td,th{padding:8px 10px}a{font-size:.78rem}}
+  </style>
+</head>
+<body>
+  <div class="topo">
+    <div>
+      <h1>📋 ${turma}</h1>
+      <p class="sub">${rifaNome} · ${alunos.length} alunos</p>
+    </div>
+    <button class="copiar-todos" onclick="copiarTodos()">📋 Copiar todos os links</button>
+  </div>
+  <table>
+    <thead><tr><th>Aluno</th><th>Link personalizado</th><th></th></tr></thead>
+    <tbody>${linhas}</tbody>
+  </table>
+  <script>
+    const links = ${JSON.stringify(alunos.map(v => `${siteUrl}/rifa/${selectedRifa.slug}?v=${v.codigo}`))};
+    const nomes = ${JSON.stringify(alunos.map(v => v.nome))};
+    function copiarTodos(){
+      const txt = nomes.map((n,i)=>n+': '+links[i]).join('\\n');
+      navigator.clipboard.writeText(txt);
+      const b = document.querySelector('.copiar-todos');
+      b.textContent='✓ Copiados!';
+      setTimeout(()=>b.textContent='📋 Copiar todos os links',2500);
+    }
+  <\/script>
+</body>
+</html>`;
+
+    const blob = new Blob([html], { type: "text/html;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const nomeTurma = turma.replace(/[^a-z0-9]/gi, "-").toLowerCase();
+    a.download = `links-turma-${nomeTurma}.html`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success(`Página HTML da turma "${turma}" baixada!`);
+  }
 
   return (
     <div className="space-y-6">
@@ -1889,7 +2003,8 @@ function VendedoresTab({ rifas }: { rifas: any[] }) {
 
       {selectedRifaId && (
         <div className="space-y-8">
-          {/* Ranking */}
+
+          {/* ── Ranking de Vendas ────────────────────────────────────────── */}
           <Card className="border-[#e6d8c1] bg-white shadow-sm">
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
@@ -1919,7 +2034,7 @@ function VendedoresTab({ rifas }: { rifas: any[] }) {
                         URL.revokeObjectURL(url);
                       }}
                     >
-                      <Download className="mr-1 h-3.5 w-3.5" /> CSV
+                      <Download className="mr-1 h-3.5 w-3.5" /> CSV Ranking
                     </Button>
                   )}
                   <Button variant="ghost" size="sm" onClick={() => utils.admin.rankingVendedores.invalidate({ rifaId: selectedRifaId })}>
@@ -1938,13 +2053,13 @@ function VendedoresTab({ rifas }: { rifas: any[] }) {
                   {ranking.map((r, idx) => (
                     <div key={r.vendedorId} className="flex items-center justify-between rounded-xl border border-[#ecdcc5] bg-[#fffaf2] p-3">
                       <div className="flex items-center gap-3">
-                        <div className={`flex h-8 w-8 items-center justify-center rounded-full font-bold text-white ${idx === 0 ? 'bg-amber-500' : idx === 1 ? 'bg-slate-400' : idx === 2 ? 'bg-amber-700' : 'bg-[#2b2116]'}`}>
+                        <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-bold text-white text-sm ${idx === 0 ? "bg-amber-500" : idx === 1 ? "bg-slate-400" : idx === 2 ? "bg-amber-700" : "bg-[#2b2116]"}`}>
                           {idx + 1}
                         </div>
                         <div>
                           <p className="font-bold text-[#1a0f06]">{r.nome}</p>
                           <p className="text-[10px] text-[#9b6b35]">
-                            {r.professor && `Prof: ${r.professor}`} {r.turma && `· Turma: ${r.turma}`}
+                            {r.professor && `Prof: ${r.professor}`}{r.turma && ` · Turma: ${r.turma}`}
                           </p>
                           <p className="text-xs text-[#9b6b35]">{r.totalPedidos} pedido(s)</p>
                         </div>
@@ -1960,7 +2075,7 @@ function VendedoresTab({ rifas }: { rifas: any[] }) {
             </CardContent>
           </Card>
 
-          {/* Gestão de Alunos */}
+          {/* ── Gestão de Alunos ─────────────────────────────────────────── */}
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold uppercase tracking-wide text-[#9b6b35]">Alunos Cadastrados</h3>
@@ -1969,18 +2084,19 @@ function VendedoresTab({ rifas }: { rifas: any[] }) {
               </Button>
             </div>
 
+            {/* Formulário de importação */}
             {importing && (
               <Card className="border-amber-200 bg-amber-50">
                 <CardContent className="p-4 space-y-4">
                   <div className="space-y-1.5">
-                    <Label>Cole os dados (Professor; Turma; Aluno) - um por linha</Label>
+                    <Label>Cole os dados (Professor; Turma; Aluno) — um por linha</Label>
                     <p className="text-[10px] text-amber-700">Exemplo: Maria Silva; 2º Ano A; Joãozinho</p>
-                    <Textarea 
-                      value={rawText} 
-                      onChange={(e) => setRawText(e.target.value)} 
-                      placeholder="Professor; Turma; Aluno" 
-                      rows={5}
-                      className="bg-white"
+                    <Textarea
+                      value={rawText}
+                      onChange={(e) => setRawText(e.target.value)}
+                      placeholder={"Maria Silva; 2º Ano A; Joãozinho\nJoão Souza; 3º Ano B; Maria Clara"}
+                      rows={6}
+                      className="bg-white font-mono text-xs"
                     />
                   </div>
                   <div className="flex gap-2">
@@ -1994,36 +2110,104 @@ function VendedoresTab({ rifas }: { rifas: any[] }) {
               </Card>
             )}
 
+            {/* Lista de alunos agrupada por turma */}
             {loadingVendedores ? (
               <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-[#a06a31]" /></div>
             ) : !vendedores?.length ? (
               <div className="rounded-2xl border border-dashed border-[#d5b078] bg-white py-12 text-center">
                 <Users className="mx-auto mb-3 h-10 w-10 text-[#d5b078]" />
-                <p className="text-[#9b6b35]">Nenhum aluno cadastrado para esta rifa.</p>
+                <p className="font-semibold text-[#2e2013]">Nenhum aluno cadastrado para esta rifa.</p>
+                <p className="mt-1 text-sm text-[#9b6b35]">Clique em "Importar Lista" para começar.</p>
               </div>
             ) : (
-              <div className="grid gap-3 sm:grid-cols-2">
-                {vendedores.map((v) => (
-                  <div key={v.id} className="flex items-center justify-between rounded-xl border border-[#ecdcc5] bg-white p-3 shadow-sm">
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate font-semibold text-[#1a0f06]">{v.nome}</p>
-                      <p className="text-[10px] text-[#9b6b35]">
-                        {v.professor && `Prof: ${v.professor}`} {v.turma && `· Turma: ${v.turma}`}
-                      </p>
-                      <p className="text-[10px] font-mono text-[#c4a06a]">{v.codigo}</p>
+              <div className="space-y-6">
+                {/* Resumo total */}
+                <div className="flex flex-wrap gap-4 rounded-2xl bg-white p-4 shadow-sm border border-[#ecdcc5]">
+                  <div className="flex items-center gap-2">
+                    <Users className="h-5 w-5 text-[#a06a31]" />
+                    <div>
+                      <p className="text-xs text-[#9b6b35]">Total de alunos</p>
+                      <p className="text-xl font-bold text-[#1a0f06]">{vendedores.length}</p>
                     </div>
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
-                      className="ml-2 h-8 border-[#d5b078] text-[#5b3a1c] hover:bg-[#f4dfbc]"
-                      onClick={() => {
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <ListOrdered className="h-5 w-5 text-[#a06a31]" />
+                    <div>
+                      <p className="text-xs text-[#9b6b35]">Turmas</p>
+                      <p className="text-xl font-bold text-[#1a0f06]">{gruposPorTurma.length}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Seção por turma */}
+                {gruposPorTurma.map(({ turma, alunos }) => (
+                  <div key={turma} className="rounded-2xl border border-[#ecdcc5] bg-white shadow-sm overflow-hidden">
+                    {/* Cabeçalho da turma */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#ecdcc5] bg-[#f7f1e8] px-4 py-3">
+                      <div>
+                        <p className="font-bold text-[#1a0f06]">{turma}</p>
+                        <p className="text-xs text-[#9b6b35]">{alunos.length} aluno(s)</p>
+                      </div>
+                      {/* Botões de ação por turma */}
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 border-[#d5b078] text-[#5b3a1c] hover:bg-[#f4dfbc] text-xs"
+                          onClick={() => copiarLinksTurma(turma, alunos)}
+                        >
+                          <Copy className="mr-1 h-3.5 w-3.5" />
+                          Copiar links da turma
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 border-[#d5b078] text-[#5b3a1c] hover:bg-[#f4dfbc] text-xs"
+                          onClick={() => exportarCSVTurma(turma, alunos)}
+                        >
+                          <Download className="mr-1 h-3.5 w-3.5" />
+                          CSV
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 border-[#d5b078] text-[#5b3a1c] hover:bg-[#f4dfbc] text-xs"
+                          onClick={() => gerarHTMLTurma(turma, alunos)}
+                        >
+                          <UploadCloud className="mr-1 h-3.5 w-3.5" />
+                          Página HTML
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Alunos da turma */}
+                    <div className="divide-y divide-[#f0e8d8]">
+                      {alunos.map((v) => {
                         const link = `${siteUrl}/rifa/${selectedRifa?.slug}?v=${v.codigo}`;
-                        navigator.clipboard.writeText(link);
-                        toast.success("Link copiado para " + v.nome);
-                      }}
-                    >
-                      <Copy className="mr-1 h-3.5 w-3.5" /> Link
-                    </Button>
+                        return (
+                          <div key={v.id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-[#fdf8f2] transition">
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate font-semibold text-sm text-[#1a0f06]">{v.nome}</p>
+                              {v.professor && (
+                                <p className="text-[10px] text-[#9b6b35]">Prof: {v.professor}</p>
+                              )}
+                              <p className="truncate font-mono text-[10px] text-[#c4a06a]">{link}</p>
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 shrink-0 border-[#d5b078] text-[#5b3a1c] hover:bg-[#f4dfbc] text-xs"
+                              onClick={() => {
+                                navigator.clipboard.writeText(link);
+                                toast.success("Link copiado: " + v.nome);
+                              }}
+                            >
+                              <Copy className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 ))}
               </div>
