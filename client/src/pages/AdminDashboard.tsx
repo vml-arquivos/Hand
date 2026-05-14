@@ -10,9 +10,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { trpc } from "@/lib/trpc";
 import {
+  AlertTriangle,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Clock3,
   Copy,
+  Database,
   Download,
   Edit2,
   Gift,
@@ -1341,7 +1345,7 @@ export default function AdminDashboard() {
             <BilhetesTab rifas={rifas ?? []} />
           </TabsContent>
           <TabsContent value="vendedores">
-            <VendedoresTab rifas={rifas ?? []} />
+            <VendedoresTab rifas={rifas ?? []} adminRole={adminRole} />
           </TabsContent>
           {adminRole === "super_admin" && (
             <TabsContent value="usuarios">
@@ -1802,10 +1806,13 @@ function UsuariosTab() {
 }
 
 // ─── Aba de Vendedores (Alunos) ──────────────────────────────────────────────
-function VendedoresTab({ rifas }: { rifas: any[] }) {
-  const [selectedRifaId, setSelectedRifaId] = useState<number | null>(rifas[0]?.id ?? null);
+function VendedoresTab({ rifas, adminRole }: { rifas: any[]; adminRole: string }) {
+  const [selectedRifaId, setSelectedRifaId] = useState<number | null>(
+    (rifas.find(r => r.rastreamentoVendedores) ?? rifas[0])?.id ?? null
+  );
   const [importing, setImporting] = useState(false);
   const [rawText, setRawText] = useState("");
+  const [openTurmas, setOpenTurmas] = useState<Set<string>>(new Set());
   const utils = trpc.useUtils();
 
   const selectedRifa = rifas.find(r => r.id === selectedRifaId);
@@ -1829,43 +1836,34 @@ function VendedoresTab({ rifas }: { rifas: any[] }) {
     onError: (err) => toast.error("Erro ao importar: " + err.message),
   });
 
+  function toggleTurma(turma: string) {
+    setOpenTurmas(prev => {
+      const next = new Set(prev);
+      if (next.has(turma)) next.delete(turma); else next.add(turma);
+      return next;
+    });
+  }
+
   function handleImport() {
     if (!selectedRifaId) return;
     const lines = rawText.split("\n").filter(l => l.trim().length > 0);
-    if (lines.length === 0) {
-      toast.error("Cole os dados dos alunos (Professor;Turma;Aluno), um por linha.");
-      return;
-    }
-
+    if (lines.length === 0) { toast.error("Cole os dados dos alunos."); return; }
     const data = lines.map(line => {
       const parts = line.split(";").map(p => p.trim());
-      let professor = "";
-      let turma = "";
-      let nome = "";
-
-      if (parts.length >= 3) {
-        [professor, turma, nome] = parts;
-      } else if (parts.length === 2) {
-        [turma, nome] = parts;
-      } else {
-        nome = parts[0];
-      }
-
+      let professor = "", turma = "", nome = "";
+      if (parts.length >= 3) [professor, turma, nome] = parts;
+      else if (parts.length === 2) [turma, nome] = parts;
+      else nome = parts[0];
       const slug = nome.toLowerCase().normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .replace(/[^a-z0-9]/g, "-")
-        .replace(/-+/g, "-")
-        .replace(/^-|-$/g, "")
-        .slice(0, 25);
+        .replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "-")
+        .replace(/-+/g, "-").replace(/^-|-$/g, "").slice(0, 25);
       return { nome, professor, turma, codigo: slug };
     });
-
     importar.mutate({ rifaId: selectedRifaId, vendedores: data });
   }
 
   const siteUrl = window.location.origin;
 
-  // ── Agrupa alunos por turma ────────────────────────────────────────────────
   const gruposPorTurma = (() => {
     if (!vendedores?.length) return [];
     const map = new Map<string, typeof vendedores>();
@@ -1879,121 +1877,56 @@ function VendedoresTab({ rifas }: { rifas: any[] }) {
       .map(([turma, alunos]) => ({ turma, alunos }));
   })();
 
-  // ── Copia todos os links de uma turma ─────────────────────────────────────
   function copiarLinksTurma(turma: string, alunos: typeof vendedores) {
     if (!alunos?.length || !selectedRifa) return;
-    const texto = alunos.map(v =>
-      `${v.nome}: ${siteUrl}/rifa/${selectedRifa.slug}?v=${v.codigo}`
-    ).join("\n");
-    navigator.clipboard.writeText(texto);
-    toast.success(`Links da turma "${turma}" copiados (${alunos.length} alunos)!`);
+    navigator.clipboard.writeText(alunos.map(v => `${v.nome}: ${siteUrl}/rifa/${selectedRifa.slug}?v=${v.codigo}`).join("\n"));
+    toast.success(`Links da turma "${turma}" copiados!`);
   }
 
-  // ── Exporta CSV de uma turma ───────────────────────────────────────────────
   function exportarCSVTurma(turma: string, alunos: typeof vendedores) {
     if (!alunos?.length || !selectedRifa) return;
-    const header = "Aluno;Professor;Turma;Link";
-    const rows = alunos.map(v =>
+    const csv = ["Aluno;Professor;Turma;Link", ...alunos.map(v =>
       `"${v.nome}";"${v.professor ?? ""}";"${v.turma ?? ""}";"${siteUrl}/rifa/${selectedRifa.slug}?v=${v.codigo}"`
-    );
-    const csv = [header, ...rows].join("\n");
+    )].join("\n");
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    const nomeTurma = turma.replace(/[^a-z0-9]/gi, "-").toLowerCase();
-    a.download = `alunos-turma-${nomeTurma}-rifa-${selectedRifaId}.csv`;
+    a.download = `alunos-turma-${turma.replace(/[^a-z0-9]/gi, "-").toLowerCase()}-rifa-${selectedRifaId}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
 
-  // ── Gera página HTML da turma para o professor compartilhar ───────────────
   function gerarHTMLTurma(turma: string, alunos: typeof vendedores) {
     if (!alunos?.length || !selectedRifa) return;
-    const rifaNome = selectedRifa.nome;
     const linhas = alunos.map(v => {
       const link = `${siteUrl}/rifa/${selectedRifa.slug}?v=${v.codigo}`;
-      return `<tr>
-        <td>${v.nome}</td>
-        <td><a href="${link}" target="_blank">${link}</a></td>
-        <td><button onclick="navigator.clipboard.writeText('${link}');this.textContent='✓ Copiado!';setTimeout(()=>this.textContent='Copiar',2000)">Copiar</button></td>
-      </tr>`;
+      return `<tr><td>${v.nome}</td><td><a href="${link}" target="_blank">${link}</a></td><td><button onclick="navigator.clipboard.writeText(\'${link}\');this.textContent=\'✓\';setTimeout(()=>this.textContent=\'Copiar\',2000)">Copiar</button></td></tr>`;
     }).join("\n");
-
-    const html = `<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Links – ${turma} – ${rifaNome}</title>
-  <style>
-    *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:system-ui,sans-serif;background:#f7f1e8;color:#1a0f06;padding:24px}
-    h1{font-size:1.3rem;margin-bottom:4px;color:#2b2116}
-    p.sub{font-size:.85rem;color:#9b6b35;margin-bottom:20px}
-    table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08)}
-    th{background:#2b2116;color:#fff;padding:10px 14px;text-align:left;font-size:.8rem;text-transform:uppercase;letter-spacing:.05em}
-    td{padding:10px 14px;border-bottom:1px solid #f0e8d8;font-size:.85rem;vertical-align:middle}
-    tr:last-child td{border-bottom:none}
-    a{color:#a06a31;word-break:break-all}
-    button{background:#a06a31;color:#fff;border:none;border-radius:6px;padding:5px 12px;cursor:pointer;font-size:.8rem;white-space:nowrap}
-    button:hover{background:#7f5525}
-    .topo{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:20px}
-    .copiar-todos{background:#2b2116;color:#fff;border:none;border-radius:8px;padding:8px 16px;cursor:pointer;font-size:.85rem}
-    .copiar-todos:hover{background:#3d2e1e}
-    @media(max-width:600px){td,th{padding:8px 10px}a{font-size:.78rem}}
-  </style>
-</head>
-<body>
-  <div class="topo">
-    <div>
-      <h1>📋 ${turma}</h1>
-      <p class="sub">${rifaNome} · ${alunos.length} alunos</p>
-    </div>
-    <button class="copiar-todos" onclick="copiarTodos()">📋 Copiar todos os links</button>
-  </div>
-  <table>
-    <thead><tr><th>Aluno</th><th>Link personalizado</th><th></th></tr></thead>
-    <tbody>${linhas}</tbody>
-  </table>
-  <script>
-    const links = ${JSON.stringify(alunos.map(v => `${siteUrl}/rifa/${selectedRifa.slug}?v=${v.codigo}`))};
-    const nomes = ${JSON.stringify(alunos.map(v => v.nome))};
-    function copiarTodos(){
-      const txt = nomes.map((n,i)=>n+': '+links[i]).join('\\n');
-      navigator.clipboard.writeText(txt);
-      const b = document.querySelector('.copiar-todos');
-      b.textContent='✓ Copiados!';
-      setTimeout(()=>b.textContent='📋 Copiar todos os links',2500);
-    }
-  <\/script>
-</body>
-</html>`;
-
+    const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Links – ${turma}</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:system-ui,sans-serif;background:#f7f1e8;color:#1a0f06;padding:24px}h1{font-size:1.3rem;margin-bottom:4px;color:#2b2116}p.sub{font-size:.85rem;color:#9b6b35;margin-bottom:20px}table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08)}th{background:#2b2116;color:#fff;padding:10px 14px;text-align:left;font-size:.8rem;text-transform:uppercase}td{padding:10px 14px;border-bottom:1px solid #f0e8d8;font-size:.85rem;vertical-align:middle}tr:last-child td{border-bottom:none}a{color:#a06a31;word-break:break-all}button{background:#a06a31;color:#fff;border:none;border-radius:6px;padding:5px 12px;cursor:pointer;font-size:.8rem}.topo{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:20px}.ct{background:#2b2116;color:#fff;border:none;border-radius:8px;padding:8px 16px;cursor:pointer;font-size:.85rem}</style></head><body><div class="topo"><div><h1>📋 ${turma}</h1><p class="sub">${selectedRifa.nome} · ${alunos.length} alunos</p></div><button class="ct" onclick="copiarTodos()">📋 Copiar todos os links</button></div><table><thead><tr><th>Aluno</th><th>Link personalizado</th><th></th></tr></thead><tbody>${linhas}</tbody></table><script>const links=${JSON.stringify(alunos.map(v => `${siteUrl}/rifa/${selectedRifa.slug}?v=${v.codigo}`))};const nomes=${JSON.stringify(alunos.map(v=>v.nome))};function copiarTodos(){const txt=nomes.map((n,i)=>n+': '+links[i]).join('\\n');navigator.clipboard.writeText(txt);const b=document.querySelector('.ct');b.textContent='✓ Copiados!';setTimeout(()=>b.textContent='📋 Copiar todos os links',2500);}<\/script></body></html>`;
     const blob = new Blob([html], { type: "text/html;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    const nomeTurma = turma.replace(/[^a-z0-9]/gi, "-").toLowerCase();
-    a.download = `links-turma-${nomeTurma}.html`;
+    a.download = `links-turma-${turma.replace(/[^a-z0-9]/gi,"-").toLowerCase()}.html`;
     a.click();
     URL.revokeObjectURL(url);
     toast.success(`Página HTML da turma "${turma}" baixada!`);
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Seletor de Rifa */}
       <div className="space-y-1.5">
-        <Label className="text-sm font-semibold">Selecione a rifa para gerenciar alunos</Label>
+        <Label className="text-sm font-semibold">Rifa</Label>
         <select
           value={selectedRifaId ?? ""}
           onChange={(e) => setSelectedRifaId(Number(e.target.value) || null)}
-          className="h-11 w-full rounded-xl border border-[#d5b078] bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#a06a31]"
+          className="h-10 w-full rounded-xl border border-[#d5b078] bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#a06a31]"
         >
           <option value="">Selecione uma rifa...</option>
           {rifas.filter(r => r.rastreamentoVendedores).map((r) => (
-            <option key={r.id} value={r.id}>{r.nome} ✓</option>
+            <option key={r.id} value={r.id}>{r.nome}</option>
           ))}
           {!rifas.some(r => r.rastreamentoVendedores) && (
             <option disabled value="">Nenhuma rifa com rastreamento ativado</option>
@@ -2002,219 +1935,315 @@ function VendedoresTab({ rifas }: { rifas: any[] }) {
       </div>
 
       {selectedRifaId && (
-        <div className="space-y-8">
+        <div className="space-y-5">
 
-          {/* ── Ranking de Vendas ────────────────────────────────────────── */}
+          {/* ── Ranking compacto ─────────────────────────────────────── */}
           <Card className="border-[#e6d8c1] bg-white shadow-sm">
-            <CardHeader className="pb-2">
+            <CardHeader className="pb-1 pt-3 px-4">
               <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center gap-2 text-lg font-bold text-[#2b2116]">
-                  <Trophy className="h-5 w-5 text-amber-500" />
+                <CardTitle className="flex items-center gap-2 text-sm font-bold text-[#2b2116]">
+                  <Trophy className="h-4 w-4 text-amber-500" />
                   Ranking de Vendas
                 </CardTitle>
-                <div className="flex gap-2">
+                <div className="flex gap-1">
                   {ranking && ranking.length > 0 && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="border-[#d5b078] text-[#5b3a1c] hover:bg-[#f4dfbc]"
+                    <Button variant="outline" size="sm" className="h-7 border-[#d5b078] text-[#5b3a1c] hover:bg-[#f4dfbc] text-xs"
                       onClick={() => {
-                        const csv = [
-                          "Posição;Aluno;Professor;Turma;Bilhetes;Valor Total;Pedidos",
-                          ...ranking.map((r, i) =>
-                            `${i + 1};${r.nome};${r.professor ?? ""};${r.turma ?? ""};${r.totalBilhetes};${r.totalValor};${r.totalPedidos}`
-                          )
+                        const csv = ["Posição;Aluno;Professor;Turma;Bilhetes;Valor Total;Pedidos",
+                          ...ranking.map((r, i) => `${i+1};${r.nome};${r.professor??""};${r.turma??""};${r.totalBilhetes};${r.totalValor};${r.totalPedidos}`)
                         ].join("\n");
-                        const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement("a");
-                        a.href = url;
-                        a.download = `ranking-alunos-rifa-${selectedRifaId}.csv`;
-                        a.click();
-                        URL.revokeObjectURL(url);
-                      }}
-                    >
-                      <Download className="mr-1 h-3.5 w-3.5" /> CSV Ranking
+                        const blob = new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"});
+                        const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`ranking-${selectedRifaId}.csv`;a.click();URL.revokeObjectURL(url);
+                      }}>
+                      <Download className="h-3 w-3" />
                     </Button>
                   )}
-                  <Button variant="ghost" size="sm" onClick={() => utils.admin.rankingVendedores.invalidate({ rifaId: selectedRifaId })}>
-                    <RefreshCw className="h-4 w-4" />
+                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => utils.admin.rankingVendedores.invalidate({ rifaId: selectedRifaId })}>
+                    <RefreshCw className="h-3.5 w-3.5" />
                   </Button>
                 </div>
               </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="px-4 pb-3">
               {loadingRanking ? (
-                <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-[#a06a31]" /></div>
+                <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin text-[#a06a31]" /></div>
               ) : !ranking?.length ? (
-                <div className="py-8 text-center text-sm text-muted-foreground">Nenhuma venda confirmada vinculada a alunos ainda.</div>
+                <p className="py-4 text-center text-xs text-muted-foreground">Nenhuma venda confirmada ainda.</p>
               ) : (
-                <div className="space-y-3">
-                  {ranking.map((r, idx) => (
-                    <div key={r.vendedorId} className="flex items-center justify-between rounded-xl border border-[#ecdcc5] bg-[#fffaf2] p-3">
-                      <div className="flex items-center gap-3">
-                        <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-bold text-white text-sm ${idx === 0 ? "bg-amber-500" : idx === 1 ? "bg-slate-400" : idx === 2 ? "bg-amber-700" : "bg-[#2b2116]"}`}>
-                          {idx + 1}
-                        </div>
+                <div className="space-y-1.5">
+                  {ranking.slice(0, 5).map((r, idx) => (
+                    <div key={r.vendedorId} className="flex items-center justify-between rounded-lg border border-[#ecdcc5] bg-[#fffaf2] px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white ${idx===0?"bg-amber-500":idx===1?"bg-slate-400":idx===2?"bg-amber-700":"bg-[#2b2116]"}`}>{idx+1}</div>
                         <div>
-                          <p className="font-bold text-[#1a0f06]">{r.nome}</p>
-                          <p className="text-[10px] text-[#9b6b35]">
-                            {r.professor && `Prof: ${r.professor}`}{r.turma && ` · Turma: ${r.turma}`}
-                          </p>
-                          <p className="text-xs text-[#9b6b35]">{r.totalPedidos} pedido(s)</p>
+                          <p className="text-sm font-semibold text-[#1a0f06] leading-tight">{r.nome}</p>
+                          <p className="text-[10px] text-[#9b6b35]">{r.turma ?? ""}</p>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <p className="font-bold text-[#1a0f06]">{r.totalBilhetes} bilhetes</p>
-                        <p className="text-xs text-[#9b6b35]">{moeda.format(parseFloat(r.totalValor))}</p>
-                      </div>
+                      <p className="text-sm font-bold text-[#1a0f06]">{r.totalBilhetes} 🎟️</p>
                     </div>
                   ))}
+                  {ranking.length > 5 && (
+                    <p className="text-center text-xs text-[#9b6b35]">+{ranking.length - 5} alunos no ranking</p>
+                  )}
                 </div>
               )}
             </CardContent>
           </Card>
 
-          {/* ── Gestão de Alunos ─────────────────────────────────────────── */}
-          <div className="space-y-4">
+          {/* ── Gestão de Alunos ─────────────────────────────────────── */}
+          <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-[#9b6b35]">Alunos Cadastrados</h3>
-              <Button size="sm" onClick={() => setImporting(true)} className="bg-[#2b2116] text-white hover:bg-[#3d2e1e]">
-                <Plus className="mr-1.5 h-4 w-4" /> Importar Lista
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-[#9b6b35]">Turmas</h3>
+              <Button size="sm" onClick={() => setImporting(true)} className="h-8 bg-[#2b2116] text-white hover:bg-[#3d2e1e] text-xs">
+                <Plus className="mr-1 h-3.5 w-3.5" /> Importar Lista
               </Button>
             </div>
 
-            {/* Formulário de importação */}
             {importing && (
               <Card className="border-amber-200 bg-amber-50">
-                <CardContent className="p-4 space-y-4">
-                  <div className="space-y-1.5">
-                    <Label>Cole os dados (Professor; Turma; Aluno) — um por linha</Label>
-                    <p className="text-[10px] text-amber-700">Exemplo: Maria Silva; 2º Ano A; Joãozinho</p>
-                    <Textarea
-                      value={rawText}
-                      onChange={(e) => setRawText(e.target.value)}
-                      placeholder={"Maria Silva; 2º Ano A; Joãozinho\nJoão Souza; 3º Ano B; Maria Clara"}
-                      rows={6}
-                      className="bg-white font-mono text-xs"
-                    />
+                <CardContent className="p-4 space-y-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Cole os dados (Professor; Turma; Aluno) — um por linha</Label>
+                    <p className="text-[10px] text-amber-700">Ex: Maria Silva; 2º Ano A; Joãozinho</p>
+                    <Textarea value={rawText} onChange={(e) => setRawText(e.target.value)}
+                      placeholder={"Maria Silva; 2º Ano A; Joãozinho"} rows={5}
+                      className="bg-white font-mono text-xs" />
                   </div>
                   <div className="flex gap-2">
-                    <Button onClick={handleImport} disabled={importar.isPending} className="bg-[#2b2116] text-white">
-                      {importar.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                      Confirmar Importação
+                    <Button onClick={handleImport} disabled={importar.isPending} className="bg-[#2b2116] text-white text-xs h-8">
+                      {importar.isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                      Confirmar
                     </Button>
-                    <Button variant="ghost" onClick={() => setImporting(false)}>Cancelar</Button>
+                    <Button variant="ghost" onClick={() => setImporting(false)} className="text-xs h-8">Cancelar</Button>
                   </div>
                 </CardContent>
               </Card>
             )}
 
-            {/* Lista de alunos agrupada por turma */}
             {loadingVendedores ? (
-              <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-[#a06a31]" /></div>
+              <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-[#a06a31]" /></div>
             ) : !vendedores?.length ? (
-              <div className="rounded-2xl border border-dashed border-[#d5b078] bg-white py-12 text-center">
-                <Users className="mx-auto mb-3 h-10 w-10 text-[#d5b078]" />
-                <p className="font-semibold text-[#2e2013]">Nenhum aluno cadastrado para esta rifa.</p>
-                <p className="mt-1 text-sm text-[#9b6b35]">Clique em "Importar Lista" para começar.</p>
+              <div className="rounded-2xl border border-dashed border-[#d5b078] bg-white py-10 text-center">
+                <Users className="mx-auto mb-2 h-8 w-8 text-[#d5b078]" />
+                <p className="text-sm font-semibold text-[#2e2013]">Nenhum aluno cadastrado.</p>
+                <p className="mt-1 text-xs text-[#9b6b35]">Clique em "Importar Lista" para começar.</p>
               </div>
             ) : (
-              <div className="space-y-6">
-                {/* Resumo total */}
-                <div className="flex flex-wrap gap-4 rounded-2xl bg-white p-4 shadow-sm border border-[#ecdcc5]">
-                  <div className="flex items-center gap-2">
-                    <Users className="h-5 w-5 text-[#a06a31]" />
-                    <div>
-                      <p className="text-xs text-[#9b6b35]">Total de alunos</p>
-                      <p className="text-xl font-bold text-[#1a0f06]">{vendedores.length}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <ListOrdered className="h-5 w-5 text-[#a06a31]" />
-                    <div>
-                      <p className="text-xs text-[#9b6b35]">Turmas</p>
-                      <p className="text-xl font-bold text-[#1a0f06]">{gruposPorTurma.length}</p>
-                    </div>
-                  </div>
+              <div className="space-y-2">
+                {/* Resumo */}
+                <div className="flex gap-3 rounded-xl bg-white border border-[#ecdcc5] px-4 py-2.5 shadow-sm text-sm">
+                  <span className="text-[#9b6b35]"><span className="font-bold text-[#1a0f06]">{vendedores.length}</span> alunos</span>
+                  <span className="text-[#d5b078]">·</span>
+                  <span className="text-[#9b6b35]"><span className="font-bold text-[#1a0f06]">{gruposPorTurma.length}</span> turmas</span>
                 </div>
 
-                {/* Seção por turma */}
-                {gruposPorTurma.map(({ turma, alunos }) => (
-                  <div key={turma} className="rounded-2xl border border-[#ecdcc5] bg-white shadow-sm overflow-hidden">
-                    {/* Cabeçalho da turma */}
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#ecdcc5] bg-[#f7f1e8] px-4 py-3">
-                      <div>
-                        <p className="font-bold text-[#1a0f06]">{turma}</p>
-                        <p className="text-xs text-[#9b6b35]">{alunos.length} aluno(s)</p>
-                      </div>
-                      {/* Botões de ação por turma */}
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-8 border-[#d5b078] text-[#5b3a1c] hover:bg-[#f4dfbc] text-xs"
-                          onClick={() => copiarLinksTurma(turma, alunos)}
-                        >
-                          <Copy className="mr-1 h-3.5 w-3.5" />
-                          Copiar links da turma
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-8 border-[#d5b078] text-[#5b3a1c] hover:bg-[#f4dfbc] text-xs"
-                          onClick={() => exportarCSVTurma(turma, alunos)}
-                        >
-                          <Download className="mr-1 h-3.5 w-3.5" />
-                          CSV
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-8 border-[#d5b078] text-[#5b3a1c] hover:bg-[#f4dfbc] text-xs"
-                          onClick={() => gerarHTMLTurma(turma, alunos)}
-                        >
-                          <UploadCloud className="mr-1 h-3.5 w-3.5" />
-                          Página HTML
-                        </Button>
-                      </div>
-                    </div>
+                {/* Cards de turma colapsáveis */}
+                {gruposPorTurma.map(({ turma, alunos }) => {
+                  const isOpen = openTurmas.has(turma);
+                  const prof = alunos[0]?.professor;
+                  return (
+                    <div key={turma} className="overflow-hidden rounded-xl border border-[#ecdcc5] bg-white shadow-sm">
+                      {/* Header clicável */}
+                      <button
+                        onClick={() => toggleTurma(turma)}
+                        className="flex w-full items-center justify-between gap-3 bg-[#f7f1e8] px-4 py-3 text-left transition hover:bg-[#f0e8d8]"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#2b2116] text-white text-xs font-bold">
+                            {alunos.length}
+                          </div>
+                          <div>
+                            <p className="font-bold text-sm text-[#1a0f06] leading-tight">{turma}</p>
+                            {prof && <p className="text-[10px] text-[#9b6b35]">Prof. {prof}</p>}
+                          </div>
+                        </div>
+                        {isOpen
+                          ? <ChevronUp className="h-4 w-4 shrink-0 text-[#9b6b35]" />
+                          : <ChevronDown className="h-4 w-4 shrink-0 text-[#9b6b35]" />}
+                      </button>
 
-                    {/* Alunos da turma */}
-                    <div className="divide-y divide-[#f0e8d8]">
-                      {alunos.map((v) => {
-                        const link = `${siteUrl}/rifa/${selectedRifa?.slug}?v=${v.codigo}`;
-                        return (
-                          <div key={v.id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-[#fdf8f2] transition">
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate font-semibold text-sm text-[#1a0f06]">{v.nome}</p>
-                              {v.professor && (
-                                <p className="text-[10px] text-[#9b6b35]">Prof: {v.professor}</p>
-                              )}
-                              <p className="truncate font-mono text-[10px] text-[#c4a06a]">{link}</p>
-                            </div>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-7 shrink-0 border-[#d5b078] text-[#5b3a1c] hover:bg-[#f4dfbc] text-xs"
-                              onClick={() => {
-                                navigator.clipboard.writeText(link);
-                                toast.success("Link copiado: " + v.nome);
-                              }}
-                            >
-                              <Copy className="h-3 w-3" />
+                      {/* Conteúdo expansível */}
+                      {isOpen && (
+                        <>
+                          {/* Ações da turma */}
+                          <div className="flex flex-wrap gap-1.5 border-b border-[#ecdcc5] bg-[#fffaf2] px-4 py-2">
+                            <Button size="sm" variant="outline" className="h-7 border-[#d5b078] text-[#5b3a1c] hover:bg-[#f4dfbc] text-xs"
+                              onClick={() => copiarLinksTurma(turma, alunos)}>
+                              <Copy className="mr-1 h-3 w-3" /> Copiar links
+                            </Button>
+                            <Button size="sm" variant="outline" className="h-7 border-[#d5b078] text-[#5b3a1c] hover:bg-[#f4dfbc] text-xs"
+                              onClick={() => exportarCSVTurma(turma, alunos)}>
+                              <Download className="mr-1 h-3 w-3" /> CSV
+                            </Button>
+                            <Button size="sm" variant="outline" className="h-7 border-[#d5b078] text-[#5b3a1c] hover:bg-[#f4dfbc] text-xs"
+                              onClick={() => gerarHTMLTurma(turma, alunos)}>
+                              <UploadCloud className="mr-1 h-3 w-3" /> HTML
                             </Button>
                           </div>
-                        );
-                      })}
+
+                          {/* Lista de alunos */}
+                          <div className="divide-y divide-[#f0e8d8] max-h-72 overflow-y-auto">
+                            {alunos.map((v) => {
+                              const link = `${siteUrl}/rifa/${selectedRifa?.slug}?v=${v.codigo}`;
+                              return (
+                                <div key={v.id} className="flex items-center gap-2 px-4 py-2 hover:bg-[#fdf8f2] transition">
+                                  <div className="min-w-0 flex-1">
+                                    <p className="truncate text-sm font-medium text-[#1a0f06]">{v.nome}</p>
+                                    <p className="truncate font-mono text-[10px] text-[#c4a06a]">{link}</p>
+                                  </div>
+                                  <Button size="sm" variant="ghost" className="h-7 w-7 shrink-0 p-0 text-[#9b6b35] hover:bg-[#f4dfbc]"
+                                    onClick={() => { navigator.clipboard.writeText(link); toast.success("Copiado: " + v.nome); }}>
+                                    <Copy className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
+
+          {/* ── Painel Super Admin ───────────────────────────────────── */}
+          {adminRole === "super_admin" && (
+            <SuperAdminPainel rifaId={selectedRifaId} rifas={rifas} />
+          )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Painel de Poder Total — Super Admin ─────────────────────────────────────
+function SuperAdminPainel({ rifaId, rifas }: { rifaId: number; rifas: any[] }) {
+  const utils = trpc.useUtils();
+  const [confirmAction, setConfirmAction] = useState<null | "bilhetes_pendentes" | "bilhetes_todos" | "rifa">(null);
+  const [confirmText, setConfirmText] = useState("");
+  const [targetRifaId, setTargetRifaId] = useState<number>(rifaId);
+
+  // sync target when parent changes
+  useEffect(() => { setTargetRifaId(rifaId); }, [rifaId]);
+
+  const targetRifa = rifas.find(r => r.id === targetRifaId);
+
+  const limparBilhetes = trpc.admin.limparBilhetesTeste.useMutation({
+    onSuccess: (data: any) => {
+      toast.success(`${data.pedidosRemovidos ?? 0} pedido(s) removido(s).`);
+      setConfirmAction(null); setConfirmText("");
+      utils.admin.dashboard.invalidate();
+      utils.admin.listBilhetes.invalidate({ rifaId: targetRifaId });
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const CONFIRM_WORDS: Record<string, string> = {
+    bilhetes_pendentes: "APAGAR PENDENTES",
+    bilhetes_todos: "APAGAR TUDO",
+    rifa: "DELETAR RIFA",
+  };
+
+  const actions = [
+    {
+      id: "bilhetes_pendentes" as const,
+      label: "Apagar bilhetes pendentes",
+      desc: "Remove todos os pedidos com status pendente desta rifa.",
+      icon: <Trash2 className="h-4 w-4" />,
+      color: "border-orange-300 bg-orange-50 text-orange-700 hover:bg-orange-100",
+      danger: false,
+    },
+    {
+      id: "bilhetes_todos" as const,
+      label: "Apagar TODOS os bilhetes",
+      desc: "Remove todos os pedidos (pendentes + confirmados). Irreversível.",
+      icon: <Database className="h-4 w-4" />,
+      color: "border-red-300 bg-red-50 text-red-700 hover:bg-red-100",
+      danger: true,
+    },
+  ];
+
+  return (
+    <div className="rounded-2xl border-2 border-red-200 bg-red-50/50 p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <ShieldCheck className="h-5 w-5 text-red-600" />
+        <div>
+          <p className="font-bold text-sm text-red-800">Zona Super Admin</p>
+          <p className="text-[10px] text-red-600">Ações irreversíveis — apenas para administradores com acesso total</p>
+        </div>
+      </div>
+
+      {/* Seletor de rifa alvo */}
+      <div className="space-y-1">
+        <Label className="text-xs font-semibold text-red-700">Rifa alvo</Label>
+        <select
+          value={targetRifaId}
+          onChange={(e) => { setTargetRifaId(Number(e.target.value)); setConfirmAction(null); setConfirmText(""); }}
+          className="h-9 w-full rounded-lg border border-red-200 bg-white px-3 text-xs focus:outline-none focus:ring-2 focus:ring-red-400"
+        >
+          {rifas.map(r => (
+            <option key={r.id} value={r.id}>{r.nome}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Ações */}
+      <div className="space-y-2">
+        {actions.map(action => (
+          <div key={action.id}>
+            <button
+              onClick={() => { setConfirmAction(action.id); setConfirmText(""); }}
+              className={`flex w-full items-center gap-3 rounded-xl border px-4 py-2.5 text-left transition ${action.color}`}
+            >
+              {action.icon}
+              <div className="flex-1">
+                <p className="text-sm font-semibold leading-tight">{action.label}</p>
+                <p className="text-[10px] opacity-80">{action.desc}</p>
+              </div>
+              {action.danger && <AlertTriangle className="h-4 w-4 shrink-0 text-red-500" />}
+            </button>
+
+            {/* Confirmação inline */}
+            {confirmAction === action.id && (
+              <div className="mt-1.5 rounded-xl border border-red-300 bg-white p-3 space-y-2">
+                <p className="text-xs font-semibold text-red-700">
+                  ⚠️ Rifa: <span className="font-bold">{targetRifa?.nome}</span>
+                </p>
+                <p className="text-xs text-red-600">
+                  Para confirmar, digite: <span className="font-mono font-bold">{CONFIRM_WORDS[action.id]}</span>
+                </p>
+                <Input
+                  value={confirmText}
+                  onChange={e => setConfirmText(e.target.value)}
+                  placeholder={`Digite ${CONFIRM_WORDS[action.id]}`}
+                  className="h-8 border-red-200 text-xs font-mono"
+                />
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    className="h-7 bg-red-600 text-xs text-white hover:bg-red-700"
+                    disabled={confirmText !== CONFIRM_WORDS[action.id] || limparBilhetes.isPending}
+                    onClick={() => {
+                      if (action.id === "bilhetes_pendentes")
+                        limparBilhetes.mutate({ rifaId: targetRifaId, apenasStatus: "pendente" });
+                      else if (action.id === "bilhetes_todos")
+                        limparBilhetes.mutate({ rifaId: targetRifaId, apenasStatus: undefined });
+                    }}
+                  >
+                    {limparBilhetes.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Executar"}
+                  </Button>
+                  <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => { setConfirmAction(null); setConfirmText(""); }}>
+                    Cancelar
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
