@@ -1,6 +1,6 @@
 FROM node:22-alpine AS builder
 WORKDIR /app
-RUN corepack enable
+RUN npm install -g pnpm@10.4.1
 COPY package.json pnpm-lock.yaml ./
 COPY patches ./patches
 RUN pnpm install --frozen-lockfile
@@ -13,7 +13,7 @@ ENV NODE_ENV=production
 ENV PORT=3000
 ENV UPLOAD_DIR=/app/uploads
 ENV PUBLIC_UPLOAD_BASE_URL=/uploads
-RUN corepack enable
+RUN npm install -g pnpm@10.4.1
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/package.json ./package.json
